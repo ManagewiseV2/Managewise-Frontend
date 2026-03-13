@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Chart } from 'primereact/chart';
 import { Card } from 'primereact/card';
@@ -12,74 +12,30 @@ import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import './Reports.css';
 
+const API_BASE = 'http://localhost:8090/api/v1';
+
 export default function Reports() {
     const navigate = useNavigate();
     const [isAiModalOpen, setAiModalOpen] = useState(false);
 
-    // --- ESTADOS DEL GENERADOR DE REPORTES ---
-    const [reportType, setReportType] = useState('velocity');
-    const [dateRange, setDateRange] = useState('last_30');
+    // --- ESTADOS DE CONTROL ---
     const [includeAI, setIncludeAI] = useState(true);
-    const [isUpdating, setIsUpdating] = useState(false); // Estado para simular carga
+    const [isUpdating, setIsUpdating] = useState(false); 
+    
+    // --- ESTADOS DE DATOS CRUDOS ---
+    const [rawStories, setRawStories] = useState([]);
+    const [rawSprints, setRawSprints] = useState([]);
 
-    const reportOptions = [
-        { label: 'Rendimiento General (Executive)', value: 'velocity' },
-        { label: 'Auditoría de Calidad y Bugs', value: 'bugs' },
-        { label: 'Análisis de Cuellos de Botella', value: 'bottleneck' },
-        { label: 'Productividad por Desarrollador', value: 'team' }
-    ];
+    // --- ESTADO DEL NUEVO FILTRO REAL ---
+    const [selectedScope, setSelectedScope] = useState('ALL');
+    const [scopeOptions, setScopeOptions] = useState([{ label: 'Visión Global del Proyecto', value: 'ALL' }]);
 
-    const dateOptions = [
-        { label: 'Últimos 30 días', value: 'last_30' },
-        { label: 'Sprint Actual', value: 'sprint' },
-        { label: 'Último Trimestre (Q1)', value: 'q1' }
-    ];
-
-    // --- ESTADOS DE API ---
-    const apiKey = "mw_live_sk_9f8a7d6b5e4c3b2a1";
-    const [copied, setCopied] = useState(false);
-
-    const copyApiKey = () => {
-        navigator.clipboard.writeText(apiKey);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    };
-
-    // --- FUNCIÓN DE ACTUALIZACIÓN SIMULADA ---
-    const handleUpdatePreview = () => {
-        setIsUpdating(true);
-        // Simula un tiempo de carga de 1.5 segundos
-        setTimeout(() => {
-            setIsUpdating(false);
-        }, 1500);
-    };
-
-    // --- FUNCIÓN MÁGICA FRONTEND PARA PDF ---
-    const handleExportPDF = () => {
-        // Esto abre la ventana de impresión nativa del navegador.
-        // Con el CSS "@media print" que pusimos, solo imprimirá el reporte.
-        window.print(); 
-    };
-
-    // ==========================================
-    // DATOS PARA EL REPORTE PRO 
-    // ==========================================
-    const velocityData = {
-        labels: ['Sprint 1', 'Sprint 2', 'Sprint 3', 'Sprint 4', 'Sprint 5'],
-        datasets: [
-            { label: 'Puntos Planeados', backgroundColor: '#e2e8f0', data: [40, 45, 50, 48, 55], borderRadius: 4 },
-            { label: 'Puntos Completados', backgroundColor: '#f97316', data: [38, 45, 42, 48, 50], borderRadius: 4 }
-        ]
-    };
-
-    const distributionData = {
-        labels: ['Nuevos Features', 'Resolución de Bugs', 'Deuda Técnica', 'Soporte'],
-        datasets: [{
-            data: [55, 20, 15, 10],
-            backgroundColor: ['#0ea5e9', '#ef4444', '#f97316', '#8b5cf6'],
-            borderWidth: 0
-        }]
-    };
+    // --- ESTADOS DE GRÁFICOS Y KPIs ---
+    const [kpis, setKpis] = useState({ planned: 0, completed: 0, progress: 0, pending: 0 });
+    const [barChartData, setBarChartData] = useState({ labels: [], datasets: [] });
+    const [distributionData, setDistributionData] = useState({ labels: [], datasets: [] });
+    const [barChartTitle, setBarChartTitle] = useState('Historial de Velocidad');
+    const [aiConclusion, setAiConclusion] = useState('');
 
     const doughnutOptions = {
         maintainAspectRatio: false,
@@ -87,23 +43,175 @@ export default function Reports() {
         cutout: '70%'
     };
 
-    const rawData = [
-        { id: 'US-102', type: 'Feature', status: 'Done', time: '3.2 días', owner: 'Sergio G.' },
-        { id: 'BUG-45', type: 'Bug', status: 'Done', time: '0.8 días', owner: 'Jose S.' },
-        { id: 'US-105', type: 'Feature', status: 'In Review', time: '4.5 días', owner: 'Maria L.' },
-        { id: 'TECH-12', type: 'Refactor', status: 'Done', time: '2.1 días', owner: 'Valeria M.' },
-    ];
-
-    const typeBodyTemplate = (rowData) => {
-        let severity = 'info';
-        if (rowData.type === 'Bug') severity = 'danger';
-        if (rowData.type === 'Refactor') severity = 'warning';
-        return <Tag value={rowData.type} severity={severity} />;
+    const apiKey = "mw_live_sk_9f8a7d6b5e4c3b2a1";
+    const [copied, setCopied] = useState(false);
+    const copyApiKey = () => {
+        navigator.clipboard.writeText(apiKey);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
+
+    // ==========================================
+    // 1. DESCARGAR TODO DE LA BASE DE DATOS
+    // ==========================================
+    const fetchBaseData = async () => {
+        setIsUpdating(true);
+        try {
+            const [storiesRes, sprintsRes] = await Promise.all([
+                fetch(`${API_BASE}/user-stories`),
+                fetch(`${API_BASE}/sprints`)
+            ]);
+
+            if (storiesRes.ok && sprintsRes.ok) {
+                const stories = await storiesRes.json();
+                const sprints = await sprintsRes.json();
+                
+                setRawStories(stories);
+                setRawSprints(sprints);
+
+                // Llenar el Dropdown con Sprints reales
+                const sprintOptions = sprints.map(sp => ({ label: `Solo ${sp.name}`, value: sp.id }));
+                setScopeOptions([{ label: 'Visión Global del Proyecto', value: 'ALL' }, ...sprintOptions]);
+            }
+        } catch (error) {
+            console.error("Error generando reportes:", error);
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchBaseData();
+    }, []);
+
+    // ==========================================
+    // 2. RECALCULAR GRÁFICOS CUANDO CAMBIA EL FILTRO
+    // ==========================================
+    useEffect(() => {
+        if (rawStories.length === 0 && rawSprints.length === 0) return;
+
+        let filteredStories = [];
+        let bLabels = [];
+        let bPlanned = [];
+        let bCompleted = [];
+        let title = '';
+        let aiText = '';
+
+        if (selectedScope === 'ALL') {
+            // ----- MODO GLOBAL -----
+            filteredStories = rawStories;
+            title = 'Historial de Velocidad (Por Sprint)';
+
+            rawSprints.forEach(sprint => {
+                bLabels.push(sprint.name);
+                const sprintStories = rawStories.filter(s => s.sprintId === sprint.id);
+                bPlanned.push(sprintStories.reduce((sum, s) => sum + (s.points || 0), 0));
+                bCompleted.push(sprintStories.filter(s => s.status === 'DONE').reduce((sum, s) => sum + (s.points || 0), 0));
+            });
+
+            if (rawSprints.length === 0) { bLabels = ['Sin Sprints']; bPlanned = [0]; bCompleted = [0]; }
+
+        } else {
+            // ----- MODO POR SPRINT (Desarrolladores) -----
+            filteredStories = rawStories.filter(s => s.sprintId === selectedScope);
+            const currentSprint = rawSprints.find(s => s.id === selectedScope);
+            const sprintName = currentSprint ? currentSprint.name : 'Este Sprint';
+            title = `Productividad de Equipo (${sprintName})`;
+
+            // Agrupar por miembro del equipo
+            const assignees = [...new Set(filteredStories.map(s => s.assigneeId || 'Sin asignar'))];
+            
+            assignees.forEach(assignee => {
+                bLabels.push(assignee);
+                const userStories = filteredStories.filter(s => (s.assigneeId || 'Sin asignar') === assignee);
+                bPlanned.push(userStories.reduce((sum, s) => sum + (s.points || 0), 0));
+                bCompleted.push(userStories.filter(s => s.status === 'DONE').reduce((sum, s) => sum + (s.points || 0), 0));
+            });
+
+            if (assignees.length === 0) { bLabels = ['Sin asignaciones']; bPlanned = [0]; bCompleted = [0]; }
+        }
+
+        // --- ACTUALIZAR GRÁFICO DE BARRAS ---
+        setBarChartTitle(title);
+        setBarChartData({
+            labels: bLabels,
+            datasets: [
+                { label: 'Puntos Planeados', backgroundColor: '#e2e8f0', data: bPlanned, borderRadius: 4 },
+                { label: 'Puntos Completados', backgroundColor: '#f97316', data: bCompleted, borderRadius: 4 }
+            ]
+        });
+
+        // --- ACTUALIZAR KPIs Y DONA (Basado en las historias filtradas) ---
+        let totalPlanned = 0;
+        let totalCompleted = 0;
+        let countToDo = 0;
+        let countInProgress = 0;
+        let countDone = 0;
+
+        filteredStories.forEach(s => {
+            const pts = s.points || 0;
+            totalPlanned += pts;
+
+            if (!s.status || s.status === 'TO_DO') {
+                countToDo++;
+            } else if (s.status === 'IN_PROGRESS') {
+                countInProgress++;
+            } else if (s.status === 'DONE') {
+                countDone++;
+                totalCompleted += pts;
+            }
+        });
+
+        setDistributionData({
+            labels: ['To Do', 'In Progress', 'Done'],
+            datasets: [{
+                data: [countToDo, countInProgress, countDone],
+                backgroundColor: ['#e2e8f0', '#0ea5e9', '#22c55e'],
+                borderWidth: 0
+            }]
+        });
+
+        const progressPercent = totalPlanned > 0 ? Math.round((totalCompleted / totalPlanned) * 100) : 0;
+        
+        setKpis({
+            planned: totalPlanned,
+            completed: totalCompleted,
+            progress: progressPercent,
+            pending: countToDo
+        });
+
+        // --- GENERAR TEXTO IA INTELIGENTE ---
+        if (selectedScope === 'ALL') {
+            aiText = `Análisis Global: El proyecto tiene un avance general del ${progressPercent}%, con ${totalCompleted} puntos completados de ${totalPlanned} planeados. Hay ${countToDo} tareas pendientes ("To Do") que deben vigilarse para mantener el ritmo.`;
+        } else {
+            aiText = `Análisis de Sprint: Este ciclo tiene un progreso actual del ${progressPercent}%. El equipo ha entregado ${totalCompleted} puntos. Quedan ${countToDo} tareas sin iniciar. Se recomienda revisar si la carga está balanceada entre los miembros.`;
+        }
+        setAiConclusion(aiText);
+
+    }, [selectedScope, rawStories, rawSprints]);
+
+    const handleExportPDF = () => { window.print(); };
+
+    // --- TEMPLATES PARA TABLA ---
+    const statusBodyTemplate = (rowData) => {
+        let severity = 'info';
+        let label = 'To Do';
+        if (rowData.status === 'IN_PROGRESS') { severity = 'warning'; label = 'In Progress'; }
+        if (rowData.status === 'DONE') { severity = 'success'; label = 'Done'; }
+        return <Tag value={label} severity={severity} />;
+    };
+
+    // Datos crudos filtrados para la tabla inferior
+    const tableData = (selectedScope === 'ALL' ? rawStories : rawStories.filter(s => s.sprintId === selectedScope)).map(s => ({
+        id: s.id.substring(0, 8) + '...', 
+        title: s.title,
+        status: s.status || 'TO_DO',
+        points: s.points || 0,
+        owner: s.assigneeId || 'Sin asignar'
+    }));
 
     return (
         <div className="dashboard-wrapper">
-            {/* SIDEBAR UNIFICADO */}
             <aside className="dashboard-sidebar hide-on-print">
                 <div className="brand">ManageWise</div>
                 <nav className="nav-links">
@@ -120,7 +228,7 @@ export default function Reports() {
                         <i className="pi pi-file-export"></i> REPORTES
                         <span className="pro-text" style={{color: 'white'}}>PRO</span>
                     </div>
-                    <div className="nav-item ai-nav-item" onClick={() => navigate('/ManageWiseAI')}>
+                    <div className="nav-item ai-nav-item" onClick={() => setAiModalOpen(true)}>
                         <i className="pi pi-sparkles" style={{ color: '#fbbf24' }}></i> 
                         <div className="ai-text"><span>ManageWise</span><span>AI</span></div>
                         <span className="pro-text">PRO</span>
@@ -137,13 +245,12 @@ export default function Reports() {
                     <header className="content-header reports-header hide-on-print">
                         <div>
                             <h1>Reportes & Integraciones</h1>
-                            <p>Exporta datos estructurados y conecta ManageWise con tus herramientas empresariales.</p>
+                            <p>Exporta datos estructurados e interactúa con métricas en tiempo real.</p>
                         </div>
                         
                         <div className="export-zone-pro">
                             <span className="export-title-pro">EXPORTACIÓN RÁPIDA:</span>
                             <div className="export-btn-group-pro">
-                                {/* BOTÓN PDF CORREGIDO CON SU ÍCONO */}
                                 <button className="export-btn-pro btn-pdf" onClick={handleExportPDF} title="Exportar a PDF">
                                     <i className="pi pi-file-pdf icon-pdf"></i>
                                 </button>
@@ -158,26 +265,27 @@ export default function Reports() {
                     </header>
 
                     <div className="reports-top-grid hide-on-print">
-                        <Card className="config-card" title="Generador de Reportes">
+                        {/* 🚨 AQUÍ ESTÁ EL NUEVO FILTRO INTELIGENTE Y REAL 🚨 */}
+                        <Card className="config-card" title="Configuración del Reporte">
                             <div className="report-form">
                                 <div className="field">
-                                    <label>Tipo de Métrica</label>
-                                    <Dropdown value={reportType} options={reportOptions} onChange={(e) => setReportType(e.value)} className="w-full" />
+                                    <label>Alcance de Datos (Filtro Activo)</label>
+                                    <Dropdown 
+                                        value={selectedScope} 
+                                        options={scopeOptions} 
+                                        onChange={(e) => setSelectedScope(e.value)} 
+                                        className="w-full" 
+                                    />
                                 </div>
-                                <div className="field">
-                                    <label>Rango de Fechas</label>
-                                    <Dropdown value={dateRange} options={dateOptions} onChange={(e) => setDateRange(e.value)} className="w-full" />
-                                </div>
-                                <div className="field-checkbox-custom">
+                                <div className="field-checkbox-custom mt-3">
                                     <Checkbox inputId="includeAI" checked={includeAI} onChange={e => setIncludeAI(e.checked)} />
                                     <label htmlFor="includeAI">Incluir Análisis Predictivo de IA</label>
                                 </div>
-                                {/* BOTÓN CON ESTADO DE CARGA */}
                                 <Button 
-                                    label={isUpdating ? "Actualizando..." : "Actualizar Vista Previa"} 
+                                    label={isUpdating ? "Sincronizando con BD..." : "Recargar desde Base de Datos"} 
                                     icon={isUpdating ? "pi pi-spin pi-spinner" : "pi pi-sync"} 
-                                    className="p-button-orange w-full mt-3" 
-                                    onClick={handleUpdatePreview}
+                                    className="p-button-outlined p-button-secondary w-full mt-3" 
+                                    onClick={fetchBaseData}
                                     disabled={isUpdating}
                                 />
                             </div>
@@ -199,62 +307,58 @@ export default function Reports() {
                         </div>
                     </div>
 
-                    {/* ESTE ES EL CONTENEDOR QUE SE IMPRIMIRÁ COMO PDF */}
                     <div className="preview-section printable-area">
                         <div className="preview-header hide-on-print">
                             <h2>Vista Previa del Documento</h2>
-                            <span className="preview-badge">MODO PRO ACTIVADO</span>
+                            <span className="preview-badge">ACTUALIZADO AL INSTANTE</span>
                         </div>
                         
                         <div className="report-canvas">
                             <div className="canvas-header">
                                 <div className="canvas-title-group">
-                                    <h2>Reporte Ejecutivo: Rendimiento General</h2>
-                                    <p>Proyecto: <strong>ManageWise SaaS</strong> | Rango: <strong>Últimos 30 días</strong></p>
+                                    <h2>Reporte Ejecutivo</h2>
+                                    <p>Proyecto: <strong>ManageWise SaaS</strong> | Filtro: <strong>{scopeOptions.find(o => o.value === selectedScope)?.label || ''}</strong></p>
                                 </div>
                                 <div className="canvas-logo">MW PRO</div>
                             </div>
 
                             <div className="canvas-kpi-grid">
                                 <div className="kpi-box">
-                                    <span className="kpi-label">Velocidad Promedio</span>
+                                    <span className="kpi-label">Puntos Planeados Totales</span>
                                     <div className="kpi-value-group">
-                                        <span className="kpi-value">44 <small>pts</small></span>
-                                        <span className="kpi-trend positive"><i className="pi pi-arrow-up"></i> 12%</span>
+                                        <span className="kpi-value">{kpis.planned} <small>pts</small></span>
                                     </div>
                                 </div>
                                 <div className="kpi-box">
-                                    <span className="kpi-label">Cycle Time (Tiempo Medio)</span>
+                                    <span className="kpi-label">Puntos Completados (Done)</span>
                                     <div className="kpi-value-group">
-                                        <span className="kpi-value">3.2 <small>días</small></span>
-                                        <span className="kpi-trend positive"><i className="pi pi-arrow-down"></i> 0.5d</span>
+                                        <span className="kpi-value" style={{color: '#f97316'}}>{kpis.completed} <small>pts</small></span>
                                     </div>
                                 </div>
                                 <div className="kpi-box">
-                                    <span className="kpi-label">Índice de Calidad</span>
+                                    <span className="kpi-label">Avance del Proyecto</span>
                                     <div className="kpi-value-group">
-                                        <span className="kpi-value">94 <small>%</small></span>
-                                        <span className="kpi-trend negative"><i className="pi pi-arrow-down"></i> 2%</span>
+                                        <span className="kpi-value" style={{color: '#22c55e'}}>{kpis.progress} <small>%</small></span>
                                     </div>
                                 </div>
                                 <div className="kpi-box">
-                                    <span className="kpi-label">Bloqueos Activos</span>
+                                    <span className="kpi-label">Tareas por Iniciar (To Do)</span>
                                     <div className="kpi-value-group">
-                                        <span className="kpi-value">1</span>
-                                        <span className="kpi-trend positive"><i className="pi pi-arrow-down"></i> 2</span>
+                                        <span className="kpi-value">{kpis.pending}</span>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="canvas-charts-grid">
                                 <div className="canvas-chart-box chart-wrapper">
-                                    <h3>Historial de Velocidad vs Planeación</h3>
+                                    {/* El título cambia según lo que selecciones */}
+                                    <h3>{barChartTitle}</h3>
                                     <div className="chart-container-relative">
-                                        <Chart type="bar" data={velocityData} options={{ maintainAspectRatio: false }} style={{ height: '250px' }} />
+                                        <Chart type="bar" data={barChartData} options={{ maintainAspectRatio: false }} style={{ height: '250px' }} />
                                     </div>
                                 </div>
                                 <div className="canvas-chart-box chart-wrapper">
-                                    <h3>Distribución del Esfuerzo</h3>
+                                    <h3>Distribución del Estado de Tareas</h3>
                                     <div className="chart-container-relative">
                                         <Chart type="doughnut" data={distributionData} options={doughnutOptions} style={{ height: '250px' }} />
                                     </div>
@@ -266,18 +370,18 @@ export default function Reports() {
                                     <div className="ai-c-header">
                                         <i className="pi pi-sparkles"></i> Conclusión Automática de IA
                                     </div>
-                                    <p>El equipo mantiene una velocidad estable y el <em>Cycle Time</em> ha mejorado. Sin embargo, la distribución muestra un 20% de esfuerzo en resolución de Bugs, causando una caída en la calidad. Se sugiere dedicar el Sprint 6 a reducir deuda técnica.</p>
+                                    <p>{aiConclusion}</p>
                                 </div>
                             )}
 
                             <div className="canvas-table-box">
-                                <h3>Muestra de Datos de Exportación (Raw Data)</h3>
-                                <DataTable value={rawData} size="small" stripedRows className="p-datatable-sm">
+                                <h3>Data Cruda (Historias de Usuario Filtradas)</h3>
+                                <DataTable value={tableData} size="small" stripedRows className="p-datatable-sm" emptyMessage="No hay historias registradas en la base de datos para este alcance.">
                                     <Column field="id" header="Ticket ID" style={{ fontWeight: 'bold' }}></Column>
-                                    <Column field="type" header="Tipo" body={typeBodyTemplate}></Column>
-                                    <Column field="status" header="Estado Actual"></Column>
+                                    <Column field="title" header="Título"></Column>
+                                    <Column field="status" header="Estado" body={statusBodyTemplate}></Column>
+                                    <Column field="points" header="Puntos"></Column>
                                     <Column field="owner" header="Asignado a"></Column>
-                                    <Column field="time" header="Lead Time"></Column>
                                 </DataTable>
                             </div>
                         </div>
@@ -286,7 +390,7 @@ export default function Reports() {
             </main>
 
             <Dialog visible={isAiModalOpen} style={{ width: '90vw', maxWidth: '1100px' }} onHide={() => setAiModalOpen(false)} className="pricing-dialog" showHeader={false} dismissableMask={true}>
-                 {/* Aquí va el contenido de tus planes de siempre */}
+                {/* Contenido del modal premium */}
             </Dialog>
         </div>
     );

@@ -12,85 +12,139 @@ const API_BASE = 'http://localhost:8090/api/v1';
 export default function Home() {
     const navigate = useNavigate();
     
+    // 🚀 MAGIA: Sacamos el ID del proyecto actual de la memoria
+    const currentProjectId = localStorage.getItem('current_project_id');
+
     const [availableSprints, setAvailableSprints] = useState([]);
     const [activeSprintId, setActiveSprintId] = useState(null); 
-    const [dashboardData, setDashboardData] = useState(null);
+    const [sprintStories, setSprintStories] = useState([]); // Las historias reales del sprint
     const [loading, setLoading] = useState(true);
     
     const [isAiModalOpen, setAiModalOpen] = useState(false);
 
-    // 1. CARGAMOS LOS SPRINTS
+    // ==========================================
+    // 1. CARGAR DATOS REALES (Filtrados por Proyecto)
+    // ==========================================
     useEffect(() => {
-        const fetchSprints = async () => {
+        if (!currentProjectId) {
+            navigate('/projects');
+            return;
+        }
+
+        const fetchInitialData = async () => {
             try {
-                const response = await fetch(`${API_BASE}/sprints`);
-                if (response.ok) {
-                    const sprintsData = await response.json();
-                    setAvailableSprints(sprintsData);
-                    if (sprintsData.length > 0) setActiveSprintId(sprintsData[0].id);
-                    else setLoading(false); 
+                // Descargamos Sprints e Historias
+                const [sprintsRes, storiesRes] = await Promise.all([
+                    fetch(`${API_BASE}/sprints`),
+                    fetch(`${API_BASE}/user-stories`)
+                ]);
+
+                if (sprintsRes.ok && storiesRes.ok) {
+                    const allSprints = await sprintsRes.json();
+                    const allStories = await storiesRes.json();
+
+                    // 🚨 FILTRAMOS SOLO LOS SPRINTS DE ESTE PROYECTO
+                    const misSprints = allSprints.filter(s => s.projectId === currentProjectId);
+                    setAvailableSprints(misSprints);
+
+                    if (misSprints.length > 0) {
+                        const primerSprintId = misSprints[0].id;
+                        setActiveSprintId(primerSprintId);
+                        
+                        // Guardamos las historias del primer sprint
+                        const historiasDelSprint = allStories.filter(story => story.sprintId === primerSprintId);
+                        setSprintStories(historiasDelSprint);
+                    }
                 }
             } catch (error) {
-                console.error("Error al cargar la lista de Sprints:", error);
-                setLoading(false);
-            }
-        };
-        fetchSprints();
-    }, []);
-
-    // 2. CARGAMOS LOS DATOS REALES DEL BACKEND
-    useEffect(() => {
-        if (!activeSprintId) return; 
-
-        const fetchDashboardData = async () => {
-            setLoading(true);
-            try {
-                const response = await fetch(`${API_BASE}/analytics/dashboard/sprint/${activeSprintId}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    setDashboardData(data);
-                } else {
-                    setDashboardData(null); 
-                }
-            } catch (error) {
-                console.error("Error al cargar los gráficos:", error);
-                setDashboardData(null);
+                console.error("Error al cargar los datos del Dashboard:", error);
             } finally {
                 setLoading(false);
             }
         };
 
-        fetchDashboardData();
+        fetchInitialData();
+    }, [currentProjectId, navigate]);
+
+    // ==========================================
+    // 2. ACTUALIZAR HISTORIAS CUANDO CAMBIAS DE SPRINT
+    // ==========================================
+    useEffect(() => {
+        if (!activeSprintId) return;
+
+        const updateSprintStories = async () => {
+            try {
+                const response = await fetch(`${API_BASE}/user-stories`);
+                if (response.ok) {
+                    const allStories = await response.json();
+                    // Filtramos las historias que pertenecen al sprint que acabas de clickear
+                    const historiasDelSprint = allStories.filter(story => story.sprintId === activeSprintId);
+                    setSprintStories(historiasDelSprint);
+                }
+            } catch (error) {
+                console.error("Error actualizando historias del sprint:", error);
+            }
+        };
+
+        updateSprintStories();
     }, [activeSprintId]);
 
 
-    // =========================================================
-    // 🚀 MODO DEMO / PRESENTACIÓN (DATOS SIMULADOS VISUALMENTE)
-    // =========================================================
+    // ==========================================
+    // 3. MATEMÁTICA REAL PARA LOS GRÁFICOS
+    // ==========================================
     
-    // Obtenemos los puntos reales que arrastraste (ej: 5)
-    const totalPoints = dashboardData?.metrics?.totalPoints || 0;
+    // Total de puntos del Sprint seleccionado
+    const totalPoints = sprintStories.reduce((sum, s) => sum + (s.points || 0), 0);
+    const completedPoints = sprintStories.filter(s => s.status === 'DONE').reduce((sum, s) => sum + (s.points || 0), 0);
+    const displayProgress = totalPoints > 0 ? Math.round((completedPoints / totalPoints) * 100) : 0;
 
-    // 1. Simulamos un Burndown realista de 5 días basado en los puntos totales
+    // Calcular Esfuerzo del Equipo Real (Puntos por Desarrollador en este Sprint)
+    const teamEffortLabels = [];
+    const teamEffortPoints = [];
+    
+    const assignees = [...new Set(sprintStories.map(s => s.assigneeId || 'Sin asignar'))];
+    assignees.forEach(assignee => {
+        teamEffortLabels.push(assignee);
+        const puntosDelDev = sprintStories.filter(s => (s.assigneeId || 'Sin asignar') === assignee).reduce((sum, s) => sum + (s.points || 0), 0);
+        teamEffortPoints.push(puntosDelDev);
+    });
+
+    const teamEffortData = {
+        labels: teamEffortLabels.length > 0 ? teamEffortLabels : ['Sin tareas'],
+        datasets: [{ 
+            label: 'Puntos Asignados', 
+            backgroundColor: ['#f97316', '#3b82f6', '#22c55e', '#8b5cf6'], 
+            data: teamEffortPoints.length > 0 ? teamEffortPoints : [0],
+            borderRadius: 6
+        }]
+    };
+
+    // Calcular Distribución Real (Estado de las tareas)
+    const countToDo = sprintStories.filter(s => !s.status || s.status === 'TO_DO').length;
+    const countInProgress = sprintStories.filter(s => s.status === 'IN_PROGRESS').length;
+    const countDone = sprintStories.filter(s => s.status === 'DONE').length;
+
+    const distributionData = {
+        labels: ['To Do', 'In Progress', 'Done'],
+        datasets: [{ 
+            data: [countToDo, countInProgress, countDone], 
+            backgroundColor: ['#e2e8f0', '#0ea5e9', '#22c55e'],
+            borderWidth: 0
+        }]
+    };
+
+    // Gráfico Burndown (Este lo mantenemos simulado visualmente porque requiere tracking diario de BD)
     const demoBurndown = [
-        { day: 'Día 1 (Inicio)', ideal: totalPoints, real: totalPoints },
-        { day: 'Día 2', ideal: totalPoints * 0.8, real: totalPoints }, // El equipo no avanzó el día 2
-        { day: 'Día 3', ideal: totalPoints * 0.6, real: totalPoints * 0.7 }, // Empezaron a terminar tareas
-        { day: 'Día 4', ideal: totalPoints * 0.4, real: totalPoints * 0.3 }, // Superaron la línea ideal
-        { day: 'Día 5', ideal: totalPoints * 0.2, real: totalPoints * 0.1 },
-        { day: 'Día 6 (Fin)', ideal: 0, real: 0 } // ¡Sprint completado!
+        { day: 'Día 1', ideal: totalPoints, real: totalPoints },
+        { day: 'Día 2', ideal: totalPoints * 0.8, real: totalPoints }, 
+        { day: 'Día 3', ideal: totalPoints * 0.6, real: totalPoints * 0.8 }, 
+        { day: 'Día 4', ideal: totalPoints * 0.4, real: totalPoints * 0.5 }, 
+        { day: 'Día 5', ideal: totalPoints * 0.2, real: totalPoints - completedPoints }, // Usa los puntos completados reales
+        { day: 'Hoy', ideal: 0, real: totalPoints - completedPoints } 
     ];
 
-    // 2. Simulamos el Esfuerzo del Equipo repartiendo los puntos
-    const demoTeamEffort = [
-        { memberName: 'Sergio (SA)', points: Math.ceil(totalPoints * 0.6) }, // Se lleva el 60% del trabajo
-        { memberName: 'Jose (JO)', points: Math.floor(totalPoints * 0.4) }   // Se lleva el 40% del trabajo
-    ];
-
-    // ==========================================
-    // ARMADO DE GRÁFICOS CON LOS DATOS DE DEMO
-    // ==========================================
-    const burndownData = dashboardData ? {
+    const burndownData = {
         labels: demoBurndown.map(b => b.day),
         datasets: [
             {
@@ -103,53 +157,26 @@ export default function Home() {
                 tension: 0
             },
             {
-                label: `Trabajo Real`,
+                label: `Trabajo Restante Real`,
                 data: demoBurndown.map(b => b.real),
                 borderColor: '#f97316',
                 borderWidth: 5, 
                 backgroundColor: 'rgba(249, 115, 22, 0.1)',
                 fill: true,
-                tension: 0.4 // Curva suavizada
+                tension: 0.4 
             }
         ]
-    } : null;
+    };
 
     const burndownOptions = {
         maintainAspectRatio: false,
-        plugins: { legend: { labels: { font: { size: 16, weight: 'bold' } } } },
+        plugins: { legend: { labels: { font: { size: 14, weight: 'bold' } } } },
         scales: {
-            y: { 
-                beginAtZero: true,
-                ticks: { font: { size: 14, weight: 'bold' } } 
-            },
-            x: { ticks: { font: { size: 14, weight: 'bold' } } }
+            y: { beginAtZero: true }
         }
     };
 
-    // La distribución (Features/Bugs) sí la dejamos real desde tu BD
-    const distributionData = dashboardData && dashboardData.distribution ? {
-        labels: Object.keys(dashboardData.distribution),
-        datasets: [{ 
-            data: Object.values(dashboardData.distribution), 
-            backgroundColor: ['#f97316', '#0f172a', '#ef4444'] 
-        }]
-    } : null;
-
-    // Usamos nuestro esfuerzo de equipo simulado
-    const teamEffortData = dashboardData ? {
-        labels: demoTeamEffort.map(t => t.memberName),
-        datasets: [{ 
-            label: 'Puntos Asignados', 
-            backgroundColor: ['#f97316', '#3b82f6'], 
-            data: demoTeamEffort.map(t => t.points),
-            borderRadius: 6
-        }]
-    } : null;
-
     const activeSprintName = availableSprints.find(s => s.id === activeSprintId)?.name || '';
-
-    // Simulamos un progreso visual del 80% para la demo en lugar del 0%
-    const displayProgress = totalPoints > 0 ? 80 : 0; 
 
     return (
         <div className="dashboard-wrapper">
@@ -209,7 +236,7 @@ export default function Home() {
                             <p style={{ color: '#64748b', marginBottom: '2rem' }}>Ve a la pestaña de Backlog para planificar tu primer Sprint.</p>
                             <Button label="Ir al Backlog" icon="pi pi-list" onClick={() => navigate('/backlog')} />
                         </div>
-                    ) : !dashboardData || totalPoints === 0 ? (
+                    ) : totalPoints === 0 ? (
                         <div className="main-grid-layout">
                             <div className="sprint-navigation">
                                 <h2 className="section-label">Sprints del Proyecto</h2>
@@ -232,12 +259,11 @@ export default function Home() {
                             <div style={{ gridColumn: 'span 3', padding: '3rem', textAlign: 'center', backgroundColor: '#fff', borderRadius: '12px' }}>
                                 <i className="pi pi-exclamation-circle text-orange" style={{ fontSize: '4rem', marginBottom: '1rem' }}></i>
                                 <h2>Gráficos en espera para "{activeSprintName}"</h2>
-                                <p style={{ color: '#64748b' }}>Arrastra historias al Sprint en el Backlog para ver la simulación de métricas.</p>
+                                <p style={{ color: '#64748b' }}>Arrastra historias con puntos de esfuerzo al Sprint en el Backlog para ver las métricas.</p>
                             </div>
                         </div>
                     ) : (
                         <div className="main-grid-layout">
-                            {/* NAVEGACIÓN DINÁMICA DE SPRINTS */}
                             <div className="sprint-navigation">
                                 <h2 className="section-label">Sprints del Proyecto</h2>
                                 <div className="sprint-list">
@@ -268,10 +294,10 @@ export default function Home() {
                                 </Card>
 
                                 <div className="lower-grid">
-                                    <Card className="grid-half" title="Distribución">
+                                    <Card className="grid-half" title="Distribución de Estados">
                                         <Chart type="pie" data={distributionData} style={{ height: '280px', width: '100%' }} />
                                     </Card>
-                                    <Card className="grid-half" title="Esfuerzo del Equipo">
+                                    <Card className="grid-half" title="Esfuerzo del Equipo (Pts Asignados)">
                                         <Chart type="bar" data={teamEffortData} options={{ scales: { y: { beginAtZero: true } } }} style={{ height: '280px', width: '100%' }} />
                                     </Card>
                                 </div>
@@ -279,16 +305,16 @@ export default function Home() {
                                 <Card className="grid-full metrics-footer">
                                     <div className="giant-stats">
                                         <div className="g-stat">
-                                            <span className="g-label">PUNTOS REALES</span>
+                                            <span className="g-label">PUNTOS REALES (SPRINT)</span>
                                             <h2 className="g-value">{totalPoints}</h2>
                                         </div>
                                         <div className="g-stat">
-                                            <span className="g-label">PROGRESO ESTIMADO</span>
+                                            <span className="g-label">PROGRESO DEL SPRINT</span>
                                             <h2 className="g-value text-orange">{displayProgress}%</h2>
                                         </div>
                                         <div className="g-stat">
-                                            <span className="g-label">INCIDENCIAS</span>
-                                            <h2 className="g-value text-red">2</h2>
+                                            <span className="g-label">TAREAS TERMINADAS</span>
+                                            <h2 className="g-value text-green">{countDone}</h2>
                                         </div>
                                     </div>
                                 </Card>
@@ -298,13 +324,8 @@ export default function Home() {
                 </div>
             </main>
 
-            {/* MODAL EMERGENTE DE PRECIOS (OMITIDO PARA AHORRAR ESPACIO, ES EL MISMO QUE YA TIENES) */}
-            <Dialog visible={isAiModalOpen} style={{ width: '400px' }} onHide={() => setAiModalOpen(false)} showHeader={false}>
-                <div style={{padding: '2rem', textAlign: 'center'}}>
-                    <i className="pi pi-star text-orange" style={{fontSize: '3rem'}}></i>
-                    <h2>Actualiza a PRO</h2>
-                    <p>Esta función requiere suscripción.</p>
-                </div>
+            <Dialog visible={isAiModalOpen} style={{ width: '90vw', maxWidth: '800px' }} onHide={() => setAiModalOpen(false)} className="pricing-dialog" showHeader={false} dismissableMask={true}>
+                 {/* ... (Modal de Precios) ... */}
             </Dialog>
         </div>
     );

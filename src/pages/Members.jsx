@@ -10,26 +10,19 @@ import './Members.css';
 
 const API_BASE = 'http://localhost:8090/api/v1';
 
-// ⚠️ ¡MUY IMPORTANTE! Cambia esto por un ID de proyecto que SÍ exista en tu base de datos
-// Puedes ver tus proyectos en Swagger haciendo GET /api/v1/projects
-const DEFAULT_PROJECT_ID = 'PRJ-1'; 
-
 export default function Members() {
     const navigate = useNavigate();
     
+    // 🚀 MAGIA: Proyecto actual
+    const currentProjectId = localStorage.getItem('current_project_id');
+
     const [isMemberModalOpen, setMemberModalOpen] = useState(false);
     const [isRoleModalOpen, setRoleModalOpen] = useState(false);
     const [editingMemberId, setEditingMemberId] = useState(null);
     const [isAiModalOpen, setAiModalOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
-    const [roles, setRoles] = useState([
-        { label: 'Development Team', value: 'DEVELOPMENT_TEAM', color: '#0ea5e9' },
-        { label: 'Scrum Master', value: 'SCRUM_MASTER', color: '#f97316' }, 
-        { label: 'Product Owner', value: 'PRODUCT_OWNER', color: '#22c55e' }, 
-        { label: 'UI/UX Designer', value: 'UI_UX_DESIGNER', color: '#8b5cf6' } 
-    ]);
-
+    const [roles, setRoles] = useState([]);
     const [members, setMembers] = useState([]);
 
     const [name, setName] = useState('');
@@ -49,58 +42,70 @@ export default function Members() {
         { label: 'Gris Oscuro', value: '#475569' }
     ];
 
-    const fetchMembers = async () => {
+    const fetchData = async () => {
+        if (!currentProjectId) {
+            navigate('/projects');
+            return;
+        }
+
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE}/team-members/project/${DEFAULT_PROJECT_ID}`);
-            if (response.ok) {
-                const data = await response.json();
-                setMembers(data);
+            const [membersRes, rolesRes] = await Promise.all([
+                fetch(`${API_BASE}/team-members/project/${currentProjectId}`), // 🚨 Usamos ID Real
+                fetch(`${API_BASE}/roles`)
+            ]);
+
+            if (membersRes.ok) {
+                const membersData = await membersRes.json();
+                setMembers(membersData);
+            }
+            if (rolesRes.ok) {
+                const rolesData = await rolesRes.json();
+                setRoles(rolesData);
             }
         } catch (error) {
-            console.error("Error al cargar los miembros:", error);
+            console.error("Error al cargar los datos:", error);
         } finally {
             setIsLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchMembers();
+        fetchData();
     }, []);
 
-    const colorItemTemplate = (option) => {
-        return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: option.value, border: '1px solid #cbd5e1' }}></div>
-                <span>{option.label}</span>
-            </div>
-        );
-    };
-
-    const colorValueTemplate = (option, props) => {
-        if (option) {
-            return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: option.value, border: '1px solid #cbd5e1' }}></div>
-                    <span>{option.label}</span>
-                </div>
-            );
-        }
-        return <span>{props.placeholder}</span>;
-    };
-
-    const crearRol = () => {
+    const crearRol = async () => {
         if (!newRoleName.trim()) return;
-        const safeValue = newRoleName.trim().toUpperCase().replace(/\s+/g, '_');
-        const nuevoRol = { label: newRoleName, value: safeValue, color: newRoleColor };
         
-        setRoles([...roles, nuevoRol]);
-        setNewRoleName('');
-        setNewRoleColor('#0ea5e9');
+        const safeValue = newRoleName.trim().toUpperCase().replace(/\s+/g, '_');
+        const rolePayload = { label: newRoleName, value: safeValue, color: newRoleColor };
+        
+        try {
+            const res = await fetch(`${API_BASE}/roles`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(rolePayload)
+            });
+            
+            if (res.ok) {
+                fetchData(); 
+                setNewRoleName('');
+                setNewRoleColor('#0ea5e9');
+            }
+        } catch (error) {
+            console.error("Error creando el rol:", error);
+        }
     };
 
-    const eliminarRol = (roleValue) => {
-        setRoles(roles.filter(r => r.value !== roleValue));
+    const eliminarRol = async (roleId) => {
+        try {
+            const res = await fetch(`${API_BASE}/roles/${roleId}`, { method: 'DELETE' });
+            if (res.ok || res.status === 204) {
+                fetchData(); 
+            }
+        } catch (error) {
+            console.error("Error eliminando el rol:", error);
+        }
     };
 
     const openAddModal = () => {
@@ -114,10 +119,10 @@ export default function Members() {
 
     const openEditModal = (member) => {
         setEditingMemberId(member.id);
-        setName(member.fullName); // Usamos fullName desde la BD
+        setName(member.fullName); 
         setRole(member.role);
         setEmail(member.email);
-        setAddress(member.location); // Usamos location desde la BD
+        setAddress(member.location); 
         setMemberModalOpen(true);
     };
 
@@ -127,13 +132,12 @@ export default function Members() {
             return;
         }
 
-        // ¡AQUÍ ESTABA EL ERROR! Ahora usamos los nombres correctos para el Backend
         const memberPayload = {
-            fullName: name.trim(), // Antes decía 'name'
+            fullName: name.trim(), 
             role: role,
             email: email || 'Sin especificar',
-            location: address || 'Sin especificar', // Antes decía 'address'
-            projectId: DEFAULT_PROJECT_ID 
+            location: address || 'Sin especificar', 
+            projectId: currentProjectId // 🚨 Añadido el ID real al guardar
         };
 
         try {
@@ -143,14 +147,14 @@ export default function Members() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(memberPayload)
                 });
-                if (res.ok) fetchMembers();
+                if (res.ok) fetchData();
             } else {
                 const res = await fetch(`${API_BASE}/team-members`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(memberPayload)
                 });
-                if (res.ok) fetchMembers();
+                if (res.ok) fetchData();
             }
         } catch (error) {
             console.error("Error guardando el miembro:", error);
@@ -163,7 +167,7 @@ export default function Members() {
         try {
             const res = await fetch(`${API_BASE}/team-members/${id}`, { method: 'DELETE' });
             if (res.ok || res.status === 204) {
-                fetchMembers();
+                fetchData();
             }
         } catch (error) {
             console.error("Error eliminando el miembro:", error);
@@ -189,6 +193,27 @@ export default function Members() {
         return fullName.substring(0, 2).toUpperCase();
     };
 
+    const colorItemTemplate = (option) => {
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: option.value, border: '1px solid #cbd5e1' }}></div>
+                <span>{option.label}</span>
+            </div>
+        );
+    };
+
+    const colorValueTemplate = (option, props) => {
+        if (option) {
+            return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '16px', height: '16px', borderRadius: '50%', backgroundColor: option.value, border: '1px solid #cbd5e1' }}></div>
+                    <span>{option.label}</span>
+                </div>
+            );
+        }
+        return <span>{props.placeholder}</span>;
+    };
+
     return (
         <div className="dashboard-wrapper">
             <aside className="dashboard-sidebar">
@@ -199,16 +224,14 @@ export default function Members() {
                     <div className="nav-item active" onClick={() => navigate('/members')}><i className="pi pi-users"></i> TEAM</div>
                     <div className="nav-item" onClick={() => navigate('/meeting')}><i className="pi pi-video"></i> MEETINGS</div>
                     
-                    <div className="nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item" onClick={() => navigate('/activity')}>
                         <i className="pi pi-history"></i> ACTIVITY FEED
                         <span className="pro-text">PRO</span>
                     </div>
-                    
-                    <div className="nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item" onClick={() => navigate('/reports')}>
                         <i className="pi pi-file-export"></i> REPORTES
                         <span className="pro-text">PRO</span>
                     </div>
-
                     <div className="nav-item ai-nav-item" onClick={() => setAiModalOpen(true)}>
                         <i className="pi pi-sparkles" style={{ color: '#fbbf24' }}></i> 
                         <div className="ai-text">
@@ -333,9 +356,9 @@ export default function Members() {
                         <label>Roles Existentes</label>
                         {roles.length === 0 && <p style={{color: '#64748b', fontSize: '0.9rem'}}>No hay roles creados.</p>}
                         {roles.map(r => (
-                            <div key={r.value} className="role-list-item">
+                            <div key={r.id} className="role-list-item">
                                 <Tag value={r.label} style={{ backgroundColor: r.color, color: '#ffffff' }} />
-                                <Button icon="pi pi-trash" className="p-button-rounded p-button-danger p-button-sm action-btn" onClick={() => eliminarRol(r.value)} />
+                                <Button icon="pi pi-trash" className="p-button-rounded p-button-danger p-button-sm action-btn" onClick={() => eliminarRol(r.id)} />
                             </div>
                         ))}
                     </div>
@@ -350,61 +373,59 @@ export default function Members() {
                 showHeader={false}
                 dismissableMask={true}
             >
-               <div className="pricing-popup-container">
-                                                   <div className="popup-close-btn" onClick={() => setAiModalOpen(false)}>
-                                                       <i className="pi pi-times"></i>
-                                                   </div>
-                                                   
-                                                   <div className="upgrade-header">
-                                                       <h1>Actualiza tu Plan</h1>
-                                                       <p>ManageWise AI y las exportaciones avanzadas requieren una suscripción activa.</p>
-                                                   </div>
-                               
-                                                   <div className="pricing-grid">
-                                                       {/* PLAN LIGHT */}
-                                                       <div className="pricing-card">
-                                                           <div className="pricing-header">
-                                                               <h3>Light</h3>
-                                                               <p>Get the basics</p>
-                                                               <div className="price">
-                                                                   <span className="currency">$</span><span className="amount">0</span><span className="period">/mo</span>
-                                                               </div>
-                                                           </div>
-                                                           <div className="pricing-features">
-                                                               <ul>
-                                                                   <li><i className="pi pi-check"></i> Hasta 2 Proyectos</li>
-                                                                   <li><i className="pi pi-check"></i> 5 Colaboradores</li>
-                                                                   <li className="disabled"><i className="pi pi-times"></i> Exportación de Reportes</li>
-                                                                   <li className="disabled"><i className="pi pi-times"></i> Asistente ManageWise AI</li>
-                                                               </ul>
-                                                           </div>
-                                                           <Button label="Tu Plan Actual" className="p-button-outlined p-button-secondary w-full" disabled />
-                                                       </div>
-                               
-                                                       {/* PLAN PRO BUSINESS (RECOMENDADO) */}
-                                                       <div className="pricing-card popular">
-                                                           <div className="recommended-badge">RECOMENDADO</div>
-                                                           <div className="pricing-header">
-                                                               <h3>Pro Business</h3>
-                                                               <p>Grow your brand</p>
-                                                               <div className="price">
-                                                                   <span className="currency">$</span><span className="amount">29</span><span className="period">/mo</span>
-                                                               </div>
-                                                           </div>
-                                                           <div className="pricing-features">
-                                                               <ul>
-                                                                   <li><i className="pi pi-check"></i> Proyectos Ilimitados</li>
-                                                                   <li><i className="pi pi-check"></i> Ilimitados Colaboradores</li>
-                                                                   <li><i className="pi pi-check"></i> Reportes PDF y Excel y Power Bi</li>
-                                                                   <li><i className="pi pi-check"></i> <strong>ManageWise AI</strong></li>
-                                                               </ul>
-                                                           </div>
-                                                           <Button label="Actualizar a Pro" className="p-button-orange w-full" onClick={() => alert('Redirigiendo a pasarela de pago...')} />
-                                                       </div>
-                                                   </div>
-                                               </div>
-                           </Dialog>
-               
+                <div className="pricing-popup-container">
+                    <div className="popup-close-btn" onClick={() => setAiModalOpen(false)}>
+                        <i className="pi pi-times"></i>
+                    </div>
+                    
+                    <div className="upgrade-header">
+                        <h1>Actualiza tu Plan</h1>
+                        <p>ManageWise AI y las exportaciones avanzadas requieren una suscripción activa.</p>
+                    </div>
+
+                    <div className="pricing-grid">
+                        {/* Contenido del modal premium */}
+                        <div className="pricing-card">
+                            <div className="pricing-header">
+                                <h3>Light</h3>
+                                <p>Get the basics</p>
+                                <div className="price">
+                                    <span className="currency">$</span><span className="amount">0</span><span className="period">/mo</span>
+                                </div>
+                            </div>
+                            <div className="pricing-features">
+                                <ul>
+                                    <li><i className="pi pi-check"></i> Hasta 2 Proyectos</li>
+                                    <li><i className="pi pi-check"></i> 5 Colaboradores</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Exportación de Reportes</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Asistente ManageWise AI</li>
+                                </ul>
+                            </div>
+                            <Button label="Tu Plan Actual" className="p-button-outlined p-button-secondary w-full" disabled />
+                        </div>
+
+                        <div className="pricing-card popular">
+                            <div className="recommended-badge">RECOMENDADO</div>
+                            <div className="pricing-header">
+                                <h3>Pro Business</h3>
+                                <p>Grow your brand</p>
+                                <div className="price">
+                                    <span className="currency">$</span><span className="amount">29</span><span className="period">/mo</span>
+                                </div>
+                            </div>
+                            <div className="pricing-features">
+                                <ul>
+                                    <li><i className="pi pi-check"></i> Proyectos Ilimitados</li>
+                                    <li><i className="pi pi-check"></i> Ilimitados Colaboradores</li>
+                                    <li><i className="pi pi-check"></i> Reportes PDF y Excel y Power Bi</li>
+                                    <li><i className="pi pi-check"></i> <strong>ManageWise AI</strong></li>
+                                </ul>
+                            </div>
+                            <Button label="Actualizar a Pro" className="p-button-orange w-full" onClick={() => alert('Redirigiendo a pasarela de pago...')} />
+                        </div>
+                    </div>
+                </div>
+            </Dialog>
         </div>
     );
 }

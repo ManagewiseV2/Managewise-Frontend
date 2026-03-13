@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from 'primereact/button';
 import { Tag } from 'primereact/tag';
 import { Dialog } from 'primereact/dialog';
@@ -8,6 +8,12 @@ import { Column } from 'primereact/column';
 import { Dropdown } from 'primereact/dropdown';
 import { useNavigate } from 'react-router-dom';
 import './Meeting.css';
+
+const API_BASE = 'http://localhost:8090/api/v1';
+
+// ⚠️ REEMPLAZA ESTO CON UN ID REAL DE TU SWAGGER (GET /api/v1/projects)
+// Si dejas un ID falso, PostgreSQL lanzará Error 500 por Foreign Key.
+const DEFAULT_PROJECT_ID = 'PON_AQUI_TU_ID_DE_PROYECTO'; 
 
 export default function Meeting() {
     const navigate = useNavigate();
@@ -29,40 +35,21 @@ export default function Meeting() {
     
     const [isRecordModalOpen, setRecordModalOpen] = useState(false);
     const [editingRecordId, setEditingRecordId] = useState(null);
-
-    // NUEVO: ESTADO PARA EL MODAL EMERGENTE DE PRECIOS
     const [isAiModalOpen, setAiModalOpen] = useState(false);
 
-    // --- DATOS SIMULADOS ---
-    const [meetings, setMeetings] = useState([
-        {
-            id: 1,
-            title: 'Daily Standup - Sprint 2',
-            date: todayStr,
-            time: '10:00',
-            link: 'https://meet.google.com/abc-defg-hij'
-        },
-        {
-            id: 2,
-            title: 'Sprint Planning',
-            date: '2026-02-28',
-            time: '15:30',
-            link: 'https://zoom.us/j/123456789'
-        }
-    ]);
+    // --- ESTADOS DE DATOS DINÁMICOS ---
+    const [meetings, setMeetings] = useState([]);
+    const [recordings, setRecordings] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const [recordings, setRecordings] = useState([
-        { id: 1, title: 'Sprint 1 Retrospective', date: '2026-02-10', duration: '00:45:20', access: 'Público', link: '#' },
-        { id: 2, title: 'EJEMPLO_TINOCO / recording_1', date: '2026-02-05', duration: '00:58:28', access: 'Privado', link: '#' }
-    ]);
-
-    // --- ESTADOS DE REUNIÓN ---
+    // --- ESTADOS DE FORMULARIOS DE REUNIÓN ---
     const [title, setTitle] = useState('');
+    const [description, setDescription] = useState(''); 
     const [date, setDate] = useState('');
     const [time, setTime] = useState('');
     const [link, setLink] = useState('');
 
-    // --- ESTADOS DE GRABACIÓN ---
+    // --- ESTADOS DE FORMULARIOS DE GRABACIÓN ---
     const [recTitle, setRecTitle] = useState('');
     const [recDate, setRecDate] = useState('');
     const [recDuration, setRecDuration] = useState('');
@@ -76,42 +63,138 @@ export default function Meeting() {
     ];
 
     // ==========================================
-    // LÓGICA DE REUNIONES
+    // 1. CARGAR DATOS DESDE SPRING BOOT
     // ==========================================
-    const getMeetingStatus = (meetingDate) => {
+    const fetchMeetingsAndRecordings = async () => {
+        setIsLoading(true);
+        try {
+            const [meetingsRes, recordingsRes] = await Promise.all([
+                fetch(`${API_BASE}/meetings`),
+                fetch(`${API_BASE}/recordings`)
+            ]);
+
+            // SACAMOS EL ID DEL PROYECTO ACTUAL DE LA MEMORIA
+            const currentProjectId = localStorage.getItem('current_project_id');
+
+            if (meetingsRes.ok) {
+                const mData = await meetingsRes.json();
+                // 🚨 MAGIA: Filtramos para que solo queden las de ESTE proyecto
+                const misReuniones = mData.filter(m => m.projectId === currentProjectId);
+                setMeetings(misReuniones);
+            }
+            if (recordingsRes.ok) {
+                const rData = await recordingsRes.json();
+                // 🚨 MAGIA: Filtramos para que solo queden las de ESTE proyecto
+                const misGrabaciones = rData.filter(r => r.projectId === currentProjectId);
+                setRecordings(misGrabaciones);
+            }
+        } catch (error) {
+            console.error("Error al cargar datos:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchMeetingsAndRecordings();
+    }, []);
+
+    // ==========================================
+    // FUNCIONES AUXILIARES PARA FECHAS (ISO-8601 a Texto)
+    // ==========================================
+    const extractDateFromISO = (isoString) => {
+        if (!isoString) return '';
+        return isoString.split('T')[0]; 
+    };
+
+    const extractTimeFromISO = (isoString) => {
+        if (!isoString) return '';
+        const timePart = isoString.split('T')[1]; 
+        if (!timePart) return '';
+        return timePart.substring(0, 5); 
+    };
+
+    const createISOString = (d, t) => {
+        if (!d || !t) return new Date().toISOString();
+        return `${d}T${t}:00.000Z`;
+    };
+
+    const getMeetingStatus = (isoDate) => {
+        if (!isoDate) return { label: 'SIN FECHA', severity: 'info' };
+        const meetingDate = extractDateFromISO(isoDate);
         if (meetingDate === todayStr) return { label: 'HOY', severity: 'danger' };
         if (meetingDate < todayStr) return { label: 'PASADA', severity: 'secondary' };
         return { label: 'PRÓXIMA', severity: 'info' };
     };
 
+    // ==========================================
+    // 2. LÓGICA DE REUNIONES
+    // ==========================================
     const openAddMeetingModal = () => {
         setEditingMeetingId(null);
-        setTitle(''); setDate(''); setTime(''); setLink('');
+        setTitle(''); setDescription(''); setDate(''); setTime(''); setLink('');
         setMeetingModalOpen(true);
     };
 
     const openEditMeetingModal = (meeting) => {
         setEditingMeetingId(meeting.id);
-        setTitle(meeting.title); setDate(meeting.date); setTime(meeting.time); setLink(meeting.link);
+        setTitle(meeting.title);
+        setDescription(meeting.description || '');
+        setDate(extractDateFromISO(meeting.scheduledAt)); 
+        setTime(extractTimeFromISO(meeting.scheduledAt)); 
+        setLink(meeting.meetingUrl); 
         setMeetingModalOpen(true);
     };
 
-    const saveMeeting = () => {
-        if (!title.trim() || !date || !time) return;
-        const meetingData = { title, date, time, link: link || '#' };
-
-        if (editingMeetingId) {
-            setMeetings(meetings.map(m => m.id === editingMeetingId ? { ...m, ...meetingData } : m));
-        } else {
-            setMeetings([...meetings, { id: Date.now(), ...meetingData }]);
+    const saveMeeting = async () => {
+        if (!title.trim() || !date || !time) {
+            alert("El título, fecha y hora son obligatorios.");
+            return;
         }
+
+        // PAYLOAD EXACTO COMO LO PIDE JAVA
+        const meetingPayload = { 
+            title: title.trim(), 
+            description: description || 'Revisión de avances',
+            scheduledAt: createISOString(date, time), 
+            meetingUrl: link || 'https://meet.google.com/', 
+            projectId: DEFAULT_PROJECT_ID 
+        };
+
+        try {
+            if (editingMeetingId) {
+                const res = await fetch(`${API_BASE}/meetings/${editingMeetingId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(meetingPayload)
+                });
+                if (res.ok) fetchMeetingsAndRecordings();
+            } else {
+                const res = await fetch(`${API_BASE}/meetings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(meetingPayload)
+                });
+                if (res.ok) fetchMeetingsAndRecordings();
+            }
+        } catch (error) {
+            console.error("Error al guardar la reunión", error);
+        }
+        
         setMeetingModalOpen(false);
     };
 
-    const deleteMeeting = (id) => setMeetings(meetings.filter(m => m.id !== id));
+    const deleteMeeting = async (id) => {
+        try {
+            const res = await fetch(`${API_BASE}/meetings/${id}`, { method: 'DELETE' });
+            if (res.ok || res.status === 204) fetchMeetingsAndRecordings();
+        } catch (error) {
+            console.error("Error al eliminar la reunión", error);
+        }
+    };
 
     // ==========================================
-    // LÓGICA DE GRABACIONES
+    // 3. LÓGICA DE GRABACIONES
     // ==========================================
     const openAddRecordModal = () => {
         setEditingRecordId(null);
@@ -121,23 +204,60 @@ export default function Meeting() {
 
     const openEditRecordModal = (rec) => {
         setEditingRecordId(rec.id);
-        setRecTitle(rec.title); setRecDate(rec.date); setRecDuration(rec.duration); setRecAccess(rec.access); setRecLink(rec.link);
+        setRecTitle(rec.title); 
+        setRecDate(extractDateFromISO(rec.recordedAt) || rec.date); 
+        setRecDuration(rec.duration); 
+        setRecAccess(rec.access || 'Público'); 
+        setRecLink(rec.videoUrl || rec.link); 
         setRecordModalOpen(true);
     };
 
-    const saveRecording = () => {
-        if (!recTitle.trim() || !recDate) return;
-        const recData = { title: recTitle, date: recDate, duration: recDuration || '--:--:--', access: recAccess, link: recLink || '#' };
-
-        if (editingRecordId) {
-            setRecordings(recordings.map(r => r.id === editingRecordId ? { ...r, ...recData } : r));
-        } else {
-            setRecordings([...recordings, { id: Date.now(), ...recData }]);
+    const saveRecording = async () => {
+        if (!recTitle.trim() || !recDate) {
+            alert("El título y la fecha son obligatorios.");
+            return;
         }
+
+        const recPayload = { 
+            title: recTitle.trim(), 
+            recordedAt: createISOString(recDate, "12:00"), 
+            duration: recDuration || '--:--:--', 
+            access: recAccess, 
+            videoUrl: recLink || 'https://drive.google.com/',
+            projectId: DEFAULT_PROJECT_ID
+        };
+
+        try {
+            if (editingRecordId) {
+                const res = await fetch(`${API_BASE}/recordings/${editingRecordId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(recPayload)
+                });
+                if (res.ok) fetchMeetingsAndRecordings();
+            } else {
+                const res = await fetch(`${API_BASE}/recordings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(recPayload)
+                });
+                if (res.ok) fetchMeetingsAndRecordings();
+            }
+        } catch (error) {
+            console.error("Error al guardar la grabación", error);
+        }
+        
         setRecordModalOpen(false);
     };
 
-    const deleteRecording = (id) => setRecordings(recordings.filter(r => r.id !== id));
+    const deleteRecording = async (id) => {
+        try {
+            const res = await fetch(`${API_BASE}/recordings/${id}`, { method: 'DELETE' });
+            if (res.ok || res.status === 204) fetchMeetingsAndRecordings();
+        } catch (error) {
+            console.error("Error al eliminar la grabación", error);
+        }
+    };
 
     // --- TEMPLATES DE TABLA ---
     const actionBodyTemplate = (rowData) => {
@@ -149,15 +269,23 @@ export default function Meeting() {
         );
     };
 
-    const linkBodyTemplate = (rowData) => (
-        <a href={rowData.link} target="_blank" rel="noopener noreferrer" className="table-link-btn">
-            <i className="pi pi-external-link"></i> Abrir Link
-        </a>
-    );
+    const linkBodyTemplate = (rowData) => {
+        const linkStr = rowData.videoUrl || rowData.link || '#';
+        return (
+            <a href={linkStr} target="_blank" rel="noopener noreferrer" className="table-link-btn">
+                <i className="pi pi-external-link"></i> Abrir Link
+            </a>
+        );
+    };
 
-    const accessBodyTemplate = (rowData) => (
-        <Tag value={rowData.access} severity={rowData.access === 'Público' ? 'success' : 'warning'} />
-    );
+    const accessBodyTemplate = (rowData) => {
+        const acc = rowData.access || 'Público';
+        return <Tag value={acc} severity={acc === 'Público' ? 'success' : 'warning'} />;
+    };
+
+    const dateBodyTemplate = (rowData) => {
+        return <span>{extractDateFromISO(rowData.recordedAt) || rowData.date}</span>;
+    };
 
     const header = (
         <div className="table-header">
@@ -175,25 +303,20 @@ export default function Meeting() {
         <div className="dashboard-wrapper">
             <aside className="dashboard-sidebar">
                 <div className="brand">ManageWise</div>
-                
-                {/* Menú Principal */}
                 <nav className="nav-links">
                     <div className="nav-item" onClick={() => navigate('/home')}><i className="pi pi-chart-line"></i> DASHBOARD</div>
                     <div className="nav-item" onClick={() => navigate('/backlog')}><i className="pi pi-list"></i> BACKLOG</div>
                     <div className="nav-item" onClick={() => navigate('/members')}><i className="pi pi-users"></i> TEAM</div>
                     <div className="nav-item active" onClick={() => navigate('/meeting')}><i className="pi pi-video"></i> MEETINGS</div>
                     
-                    {/* SECCIONES PREMIUM (ABREN MODAL) */}
                     <div className="nav-item" onClick={() => setAiModalOpen(true)}>
                         <i className="pi pi-history"></i> ACTIVITY FEED
                         <span className="pro-text">PRO</span>
                     </div>
-                    
                     <div className="nav-item" onClick={() => setAiModalOpen(true)}>
                         <i className="pi pi-file-export"></i> REPORTES
                         <span className="pro-text">PRO</span>
                     </div>
-
                     <div className="nav-item ai-nav-item" onClick={() => setAiModalOpen(true)}>
                         <i className="pi pi-sparkles" style={{ color: '#fbbf24' }}></i> 
                         <div className="ai-text">
@@ -213,7 +336,6 @@ export default function Meeting() {
 
             <main className="dashboard-content">
                 <div className="content-inner meetings-inner">
-                    
                     <header className="content-header meetings-header">
                         <div>
                             <h1>Reuniones</h1>
@@ -224,61 +346,69 @@ export default function Meeting() {
                         </div>
                     </header>
 
-                    <div className="meetings-grid">
-                        {meetings.length === 0 && <p className="empty-msg">No hay reuniones programadas.</p>}
-                        
-                        {meetings.map(meeting => {
-                            const status = getMeetingStatus(meeting.date);
-                            return (
-                                <div key={meeting.id} className="meeting-card">
-                                    <div className="meeting-content">
-                                        <div className="meeting-info-header">
-                                            <h3>{meeting.title}</h3>
-                                            <Tag value={status.label} severity={status.severity} />
-                                        </div>
-                                        
-                                        <div className="meeting-time-block">
-                                            <div className="time-row">
-                                                <i className="pi pi-calendar"></i>
-                                                <span>{meeting.date}</span>
-                                            </div>
-                                            <div className="time-row">
-                                                <i className="pi pi-clock"></i>
-                                                <span>{meeting.time} Hrs</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="meeting-footer">
-                                            <a href={meeting.link} target="_blank" rel="noopener noreferrer" className="join-btn">
-                                                <i className="pi pi-video"></i> Entrar a la Reunión
-                                            </a>
-                                            <div className="meeting-actions">
-                                                <Button icon="pi pi-pencil" className="p-button-rounded p-button-secondary action-btn" onClick={() => openEditMeetingModal(meeting)} />
-                                                <Button icon="pi pi-trash" className="p-button-rounded p-button-danger action-btn" onClick={() => deleteMeeting(meeting.id)} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )
-                        })}
-                    </div>
-
-                    <hr className="section-divider" />
-
-                    <div className="recordings-section">
-                        <h2>Grabaciones Anteriores</h2>
-                        <div className="table-container">
-                            <DataTable value={recordings} header={header} globalFilter={globalFilter} emptyMessage="No se encontraron grabaciones." className="custom-datatable" responsiveLayout="scroll">
-                                <Column field="title" header="Título de Grabación" sortable style={{ minWidth: '14rem' }}></Column>
-                                <Column field="date" header="Fecha" sortable style={{ minWidth: '8rem' }}></Column>
-                                <Column field="duration" header="Duración" style={{ minWidth: '8rem' }}></Column>
-                                <Column body={accessBodyTemplate} header="Acceso" style={{ minWidth: '8rem' }}></Column>
-                                <Column body={linkBodyTemplate} header="Enlace" style={{ minWidth: '10rem' }}></Column>
-                                <Column body={actionBodyTemplate} header="Acciones" style={{ minWidth: '8rem', textAlign: 'right' }}></Column>
-                            </DataTable>
+                    {isLoading ? (
+                        <div style={{ padding: '4rem', textAlign: 'center', color: '#64748b' }}>
+                            <i className="pi pi-spin pi-spinner" style={{ fontSize: '3rem', marginBottom: '1rem', color: '#f97316' }}></i>
+                            <h2>Cargando Reuniones...</h2>
                         </div>
-                    </div>
+                    ) : (
+                        <>
+                            <div className="meetings-grid">
+                                {meetings.length === 0 && <p className="empty-msg">No hay reuniones programadas.</p>}
+                                
+                                {meetings.map(meeting => {
+                                    const status = getMeetingStatus(meeting.scheduledAt);
+                                    return (
+                                        <div key={meeting.id} className="meeting-card">
+                                            <div className="meeting-content">
+                                                <div className="meeting-info-header">
+                                                    <h3>{meeting.title}</h3>
+                                                    <Tag value={status.label} severity={status.severity} />
+                                                </div>
+                                                
+                                                <div className="meeting-time-block">
+                                                    <div className="time-row">
+                                                        <i className="pi pi-calendar"></i>
+                                                        <span>{extractDateFromISO(meeting.scheduledAt)}</span>
+                                                    </div>
+                                                    <div className="time-row">
+                                                        <i className="pi pi-clock"></i>
+                                                        <span>{extractTimeFromISO(meeting.scheduledAt)} Hrs</span>
+                                                    </div>
+                                                </div>
 
+                                                <div className="meeting-footer">
+                                                    <a href={meeting.meetingUrl} target="_blank" rel="noopener noreferrer" className="join-btn">
+                                                        <i className="pi pi-video"></i> Entrar a la Reunión
+                                                    </a>
+                                                    <div className="meeting-actions">
+                                                        <Button icon="pi pi-pencil" className="p-button-rounded p-button-secondary action-btn" onClick={() => openEditMeetingModal(meeting)} />
+                                                        <Button icon="pi pi-trash" className="p-button-rounded p-button-danger action-btn" onClick={() => deleteMeeting(meeting.id)} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+
+                            <hr className="section-divider" />
+
+                            <div className="recordings-section">
+                                <h2>Grabaciones Anteriores</h2>
+                                <div className="table-container">
+                                    <DataTable value={recordings} header={header} globalFilter={globalFilter} emptyMessage="No se encontraron grabaciones." className="custom-datatable" responsiveLayout="scroll">
+                                        <Column field="title" header="Título de Grabación" sortable style={{ minWidth: '14rem' }}></Column>
+                                        <Column body={dateBodyTemplate} header="Fecha" sortable style={{ minWidth: '8rem' }}></Column>
+                                        <Column field="duration" header="Duración" style={{ minWidth: '8rem' }}></Column>
+                                        <Column body={accessBodyTemplate} header="Acceso" style={{ minWidth: '8rem' }}></Column>
+                                        <Column body={linkBodyTemplate} header="Enlace" style={{ minWidth: '10rem' }}></Column>
+                                        <Column body={actionBodyTemplate} header="Acciones" style={{ minWidth: '8rem', textAlign: 'right' }}></Column>
+                                    </DataTable>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             </main>
 
@@ -336,72 +466,67 @@ export default function Meeting() {
                 </div>
             </Dialog>
 
-            {/* ========================================================= */}
-            {/* MODAL EMERGENTE DE PRECIOS (COPIADO DESDE HOME) */}
-            {/* ========================================================= */}
+            {/* MODAL PREMIUM */}
             <Dialog 
                 visible={isAiModalOpen} 
-                style={{ width: '90vw', maxWidth: '1100px' }} 
+                style={{ width: '90vw', maxWidth: '800px' }} 
                 onHide={() => setAiModalOpen(false)}
                 className="pricing-dialog"
                 showHeader={false}
                 dismissableMask={true}
             >
                 <div className="pricing-popup-container">
-                                    <div className="popup-close-btn" onClick={() => setAiModalOpen(false)}>
-                                        <i className="pi pi-times"></i>
-                                    </div>
-                                    
-                                    <div className="upgrade-header">
-                                        <h1>Actualiza tu Plan</h1>
-                                        <p>ManageWise AI y las exportaciones avanzadas requieren una suscripción activa.</p>
-                                    </div>
-                
-                                    <div className="pricing-grid">
-                                        {/* PLAN LIGHT */}
-                                        <div className="pricing-card">
-                                            <div className="pricing-header">
-                                                <h3>Light</h3>
-                                                <p>Get the basics</p>
-                                                <div className="price">
-                                                    <span className="currency">$</span><span className="amount">0</span><span className="period">/mo</span>
-                                                </div>
-                                            </div>
-                                            <div className="pricing-features">
-                                                <ul>
-                                                    <li><i className="pi pi-check"></i> Hasta 2 Proyectos</li>
-                                                    <li><i className="pi pi-check"></i> 5 Colaboradores</li>
-                                                    <li className="disabled"><i className="pi pi-times"></i> Exportación de Reportes</li>
-                                                    <li className="disabled"><i className="pi pi-times"></i> Asistente ManageWise AI</li>
-                                                </ul>
-                                            </div>
-                                            <Button label="Tu Plan Actual" className="p-button-outlined p-button-secondary w-full" disabled />
-                                        </div>
-                
-                                        {/* PLAN PRO BUSINESS (RECOMENDADO) */}
-                                        <div className="pricing-card popular">
-                                            <div className="recommended-badge">RECOMENDADO</div>
-                                            <div className="pricing-header">
-                                                <h3>Pro Business</h3>
-                                                <p>Grow your brand</p>
-                                                <div className="price">
-                                                    <span className="currency">$</span><span className="amount">29</span><span className="period">/mo</span>
-                                                </div>
-                                            </div>
-                                            <div className="pricing-features">
-                                                <ul>
-                                                    <li><i className="pi pi-check"></i> Proyectos Ilimitados</li>
-                                                    <li><i className="pi pi-check"></i> Ilimitados Colaboradores</li>
-                                                    <li><i className="pi pi-check"></i> Reportes PDF y Excel y Power Bi</li>
-                                                    <li><i className="pi pi-check"></i> <strong>ManageWise AI</strong></li>
-                                                </ul>
-                                            </div>
-                                            <Button label="Actualizar a Pro" className="p-button-orange w-full" onClick={() => alert('Redirigiendo a pasarela de pago...')} />
-                                        </div>
-                                    </div>
-                                </div>
-            </Dialog>
+                    <div className="popup-close-btn" onClick={() => setAiModalOpen(false)}>
+                        <i className="pi pi-times"></i>
+                    </div>
+                    
+                    <div className="upgrade-header">
+                        <h1>Actualiza tu Plan</h1>
+                        <p>ManageWise AI y las exportaciones avanzadas requieren una suscripción activa.</p>
+                    </div>
 
+                    <div className="pricing-grid">
+                        <div className="pricing-card">
+                            <div className="pricing-header">
+                                <h3>Light</h3>
+                                <p>Get the basics</p>
+                                <div className="price">
+                                    <span className="currency">$</span><span className="amount">0</span><span className="period">/mo</span>
+                                </div>
+                            </div>
+                            <div className="pricing-features">
+                                <ul>
+                                    <li><i className="pi pi-check"></i> Hasta 2 Proyectos</li>
+                                    <li><i className="pi pi-check"></i> 5 Colaboradores</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Exportación de Reportes</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Asistente ManageWise AI</li>
+                                </ul>
+                            </div>
+                            <Button label="Tu Plan Actual" className="p-button-outlined p-button-secondary w-full" disabled />
+                        </div>
+
+                        <div className="pricing-card popular">
+                            <div className="recommended-badge">RECOMENDADO</div>
+                            <div className="pricing-header">
+                                <h3>Pro Business</h3>
+                                <p>Grow your brand</p>
+                                <div className="price">
+                                    <span className="currency">$</span><span className="amount">29</span><span className="period">/mo</span>
+                                </div>
+                            </div>
+                            <div className="pricing-features">
+                                <ul>
+                                    <li><i className="pi pi-check"></i> Proyectos Ilimitados</li>
+                                    <li><i className="pi pi-check"></i> Ilimitados Colaboradores</li>
+                                    <li><i className="pi pi-check"></i> Reportes PDF y Excel y Power Bi</li>
+                                    <li><i className="pi pi-check"></i> <strong>ManageWise AI</strong></li>
+                                </ul>
+                            </div>
+                            <Button label="Actualizar a Pro" className="p-button-orange w-full" onClick={() => alert('Redirigiendo a pasarela de pago...')} />
+                        </div>
+                    </div>
+                </div>
+            </Dialog>
         </div>
     );
 }
