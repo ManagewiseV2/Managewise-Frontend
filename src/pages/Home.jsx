@@ -15,6 +15,9 @@ export default function Home() {
     // 🚀 MAGIA: Sacamos el ID del proyecto actual de la memoria
     const currentProjectId = localStorage.getItem('current_project_id');
 
+    // 🚨 ESTA ES LA LÍNEA QUE FALTABA: Declaramos el estado del nombre del proyecto
+    const [projectName, setProjectName] = useState('Cargando Proyecto...');
+
     const [availableSprints, setAvailableSprints] = useState([]);
     const [activeSprintId, setActiveSprintId] = useState(null); 
     const [sprintStories, setSprintStories] = useState([]); // Las historias reales del sprint
@@ -33,17 +36,27 @@ export default function Home() {
 
         const fetchInitialData = async () => {
             try {
-                // Descargamos Sprints e Historias
-                const [sprintsRes, storiesRes] = await Promise.all([
+                // 🚨 TRUCO NINJA: Pedimos la lista general de proyectos para esquivar el error 405 de Java
+                const [sprintsRes, storiesRes, projectsRes] = await Promise.all([
                     fetch(`${API_BASE}/sprints`),
-                    fetch(`${API_BASE}/user-stories`)
+                    fetch(`${API_BASE}/user-stories`),
+                    fetch(`${API_BASE}/projects`) // 👈 Quitamos el /${currentProjectId}
                 ]);
+
+                // 🚨 Buscamos nuestro proyecto en la lista
+                if (projectsRes.ok) {
+                    const allProjects = await projectsRes.json();
+                    const miProyecto = allProjects.find(p => p.id === currentProjectId);
+                    if (miProyecto) {
+                        setProjectName(miProyecto.name);
+                    }
+                }
 
                 if (sprintsRes.ok && storiesRes.ok) {
                     const allSprints = await sprintsRes.json();
                     const allStories = await storiesRes.json();
 
-                    // 🚨 FILTRAMOS SOLO LOS SPRINTS DE ESTE PROYECTO
+                    // FILTRAMOS SOLO LOS SPRINTS DE ESTE PROYECTO
                     const misSprints = allSprints.filter(s => s.projectId === currentProjectId);
                     setAvailableSprints(misSprints);
 
@@ -77,7 +90,6 @@ export default function Home() {
                 const response = await fetch(`${API_BASE}/user-stories`);
                 if (response.ok) {
                     const allStories = await response.json();
-                    // Filtramos las historias que pertenecen al sprint que acabas de clickear
                     const historiasDelSprint = allStories.filter(story => story.sprintId === activeSprintId);
                     setSprintStories(historiasDelSprint);
                 }
@@ -134,13 +146,13 @@ export default function Home() {
         }]
     };
 
-    // Gráfico Burndown (Este lo mantenemos simulado visualmente porque requiere tracking diario de BD)
+    // Gráfico Burndown 
     const demoBurndown = [
         { day: 'Día 1', ideal: totalPoints, real: totalPoints },
         { day: 'Día 2', ideal: totalPoints * 0.8, real: totalPoints }, 
         { day: 'Día 3', ideal: totalPoints * 0.6, real: totalPoints * 0.8 }, 
         { day: 'Día 4', ideal: totalPoints * 0.4, real: totalPoints * 0.5 }, 
-        { day: 'Día 5', ideal: totalPoints * 0.2, real: totalPoints - completedPoints }, // Usa los puntos completados reales
+        { day: 'Día 5', ideal: totalPoints * 0.2, real: totalPoints - completedPoints }, 
         { day: 'Hoy', ideal: 0, real: totalPoints - completedPoints } 
     ];
 
@@ -211,7 +223,8 @@ export default function Home() {
                 <div className="content-inner">
                     <header className="content-header">
                         <div>
-                            <h1>Panel de Control del Proyecto</h1>
+                            {/* 🚨 AQUÍ INYECTAMOS EL NOMBRE */}
+                            <h1>Dashboard: {projectName}</h1>
                             <p>Gestión avanzada de rendimiento para <strong>ManageWise</strong>.</p>
                         </div>
                         <div className="export-actions">
@@ -325,7 +338,58 @@ export default function Home() {
             </main>
 
             <Dialog visible={isAiModalOpen} style={{ width: '90vw', maxWidth: '800px' }} onHide={() => setAiModalOpen(false)} className="pricing-dialog" showHeader={false} dismissableMask={true}>
-                 {/* ... (Modal de Precios) ... */}
+                 {/* Modal de Precios */}
+                 <div className="pricing-popup-container">
+                    <div className="popup-close-btn" onClick={() => setAiModalOpen(false)}>
+                        <i className="pi pi-times"></i>
+                    </div>
+                    
+                    <div className="upgrade-header">
+                        <h1>Actualiza tu Plan</h1>
+                        <p>ManageWise AI y las exportaciones avanzadas requieren una suscripción activa.</p>
+                    </div>
+
+                    <div className="pricing-grid">
+                        <div className="pricing-card">
+                            <div className="pricing-header">
+                                <h3>Light</h3>
+                                <p>Get the basics</p>
+                                <div className="price">
+                                    <span className="currency">$</span><span className="amount">0</span><span className="period">/mo</span>
+                                </div>
+                            </div>
+                            <div className="pricing-features">
+                                <ul>
+                                    <li><i className="pi pi-check"></i> Hasta 2 Proyectos</li>
+                                    <li><i className="pi pi-check"></i> 5 Colaboradores</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Exportación de Reportes</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Asistente ManageWise AI</li>
+                                </ul>
+                            </div>
+                            <Button label="Tu Plan Actual" className="p-button-outlined p-button-secondary w-full" disabled />
+                        </div>
+
+                        <div className="pricing-card popular">
+                            <div className="recommended-badge">RECOMENDADO</div>
+                            <div className="pricing-header">
+                                <h3>Pro Business</h3>
+                                <p>Grow your brand</p>
+                                <div className="price">
+                                    <span className="currency">$</span><span className="amount">29</span><span className="period">/mo</span>
+                                </div>
+                            </div>
+                            <div className="pricing-features">
+                                <ul>
+                                    <li><i className="pi pi-check"></i> Proyectos Ilimitados</li>
+                                    <li><i className="pi pi-check"></i> Ilimitados Colaboradores</li>
+                                    <li><i className="pi pi-check"></i> Reportes PDF y Excel y Power Bi</li>
+                                    <li><i className="pi pi-check"></i> <strong>ManageWise AI</strong></li>
+                                </ul>
+                            </div>
+                            <Button label="Actualizar a Pro" className="p-button-orange w-full" onClick={() => alert('Redirigiendo a pasarela de pago...')} />
+                        </div>
+                    </div>
+                </div>
             </Dialog>
         </div>
     );

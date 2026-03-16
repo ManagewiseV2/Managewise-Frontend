@@ -16,11 +16,16 @@ const API_BASE = 'http://localhost:8090/api/v1';
 
 export default function Reports() {
     const navigate = useNavigate();
+    
+    // 🚀 MAGIA: Sacamos el ID del proyecto actual
+    const currentProjectId = localStorage.getItem('current_project_id');
+
     const [isAiModalOpen, setAiModalOpen] = useState(false);
 
     // --- ESTADOS DE CONTROL ---
     const [includeAI, setIncludeAI] = useState(true);
     const [isUpdating, setIsUpdating] = useState(false); 
+    const [projectName, setProjectName] = useState('Cargando Proyecto...');
     
     // --- ESTADOS DE DATOS CRUDOS ---
     const [rawStories, setRawStories] = useState([]);
@@ -52,15 +57,29 @@ export default function Reports() {
     };
 
     // ==========================================
-    // 1. DESCARGAR TODO DE LA BASE DE DATOS
+    // 1. DESCARGAR DATOS FILTRADOS DEL PROYECTO
     // ==========================================
     const fetchBaseData = async () => {
+        if (!currentProjectId) {
+            navigate('/projects');
+            return;
+        }
+
         setIsUpdating(true);
         try {
-            const [storiesRes, sprintsRes] = await Promise.all([
-                fetch(`${API_BASE}/user-stories`),
-                fetch(`${API_BASE}/sprints`)
+            // 🚨 AHORA LLAMAMOS A LAS RUTAS FILTRADAS POR PROYECTO
+            const [storiesRes, sprintsRes, projectsRes] = await Promise.all([
+                fetch(`${API_BASE}/user-stories/project/${currentProjectId}`),
+                fetch(`${API_BASE}/sprints/project/${currentProjectId}`),
+                fetch(`${API_BASE}/projects`) // Truco ninja para sacar el nombre sin errores
             ]);
+
+            // Extraer nombre del proyecto
+            if (projectsRes.ok) {
+                const allProjects = await projectsRes.json();
+                const miProyecto = allProjects.find(p => p.id === currentProjectId);
+                if (miProyecto) setProjectName(miProyecto.name);
+            }
 
             if (storiesRes.ok && sprintsRes.ok) {
                 const stories = await storiesRes.json();
@@ -69,7 +88,7 @@ export default function Reports() {
                 setRawStories(stories);
                 setRawSprints(sprints);
 
-                // Llenar el Dropdown con Sprints reales
+                // Llenar el Dropdown con Sprints reales de ESTE proyecto
                 const sprintOptions = sprints.map(sp => ({ label: `Solo ${sp.name}`, value: sp.id }));
                 setScopeOptions([{ label: 'Visión Global del Proyecto', value: 'ALL' }, ...sprintOptions]);
             }
@@ -82,7 +101,7 @@ export default function Reports() {
 
     useEffect(() => {
         fetchBaseData();
-    }, []);
+    }, [currentProjectId]);
 
     // ==========================================
     // 2. RECALCULAR GRÁFICOS CUANDO CAMBIA EL FILTRO
@@ -265,7 +284,6 @@ export default function Reports() {
                     </header>
 
                     <div className="reports-top-grid hide-on-print">
-                        {/* 🚨 AQUÍ ESTÁ EL NUEVO FILTRO INTELIGENTE Y REAL 🚨 */}
                         <Card className="config-card" title="Configuración del Reporte">
                             <div className="report-form">
                                 <div className="field">
@@ -317,7 +335,8 @@ export default function Reports() {
                             <div className="canvas-header">
                                 <div className="canvas-title-group">
                                     <h2>Reporte Ejecutivo</h2>
-                                    <p>Proyecto: <strong>ManageWise SaaS</strong> | Filtro: <strong>{scopeOptions.find(o => o.value === selectedScope)?.label || ''}</strong></p>
+                                    {/* 🚨 AQUÍ INYECTAMOS EL NOMBRE REAL DEL PROYECTO */}
+                                    <p>Proyecto: <strong>{projectName}</strong> | Filtro: <strong>{scopeOptions.find(o => o.value === selectedScope)?.label || ''}</strong></p>
                                 </div>
                                 <div className="canvas-logo">MW PRO</div>
                             </div>
@@ -351,7 +370,6 @@ export default function Reports() {
 
                             <div className="canvas-charts-grid">
                                 <div className="canvas-chart-box chart-wrapper">
-                                    {/* El título cambia según lo que selecciones */}
                                     <h3>{barChartTitle}</h3>
                                     <div className="chart-container-relative">
                                         <Chart type="bar" data={barChartData} options={{ maintainAspectRatio: false }} style={{ height: '250px' }} />

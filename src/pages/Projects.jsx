@@ -22,7 +22,11 @@ export default function Projects() {
     const [projects, setProjects] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // CONFIGURACIÓN DE PLAN (Mantenemos el límite de 2 para el portafolio)
+    // --- DATOS DEL USUARIO LOGUEADO ---
+    const currentUsername = localStorage.getItem('current_username') || 'Usuario';
+    const initials = currentUsername.substring(0, 2).toUpperCase();
+
+    // CONFIGURACIÓN DE PLAN
     const PROJECT_LIMIT = 2; 
 
     // ==========================================
@@ -30,11 +34,30 @@ export default function Projects() {
     // ==========================================
     const fetchProjects = async () => {
         setIsLoading(true);
+        // 🔐 Sacamos el token de la mochila
+        const token = localStorage.getItem('jwt_token');
+
         try {
-            const res = await fetch(`${API_BASE}/projects`);
+            const res = await fetch(`${API_BASE}/projects`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` // 🚨 MOSTRAMOS EL PASE VIP
+                }
+            });
+
             if (res.ok) {
                 const data = await res.json();
-                setProjects(data);
+                
+                // 🚨 FILTRO VIP: Solo guardamos los proyectos donde tú eres el dueño
+                const misProyectos = data.filter(project => project.ownerId === currentUsername);
+                
+                setProjects(misProyectos);
+                
+            } else if (res.status === 403 || res.status === 401) {
+                // Si el token expiró o es inválido, lo mandamos al login
+                localStorage.clear();
+                navigate('/login');
             }
         } catch (error) {
             console.error("Error al cargar proyectos:", error);
@@ -44,18 +67,35 @@ export default function Projects() {
     };
 
     useEffect(() => {
+        // Si no hay token en la mochila, ni lo intentamos, de frente al login
+        if (!localStorage.getItem('jwt_token')) {
+            navigate('/login');
+            return;
+        }
+        
         fetchProjects();
         // Limpiamos la memoria del proyecto actual al estar en el lobby
         localStorage.removeItem('current_project_id');
-    }, []);
+    }, [navigate]);
 
     // ==========================================
-    // 2. CREAR PROYECTO REAL (CORREGIDO ERROR 500)
+    // 2. CREAR PROYECTO REAL
+    // ==========================================
+    // ==========================================
+    // 2. CREAR PROYECTO REAL
     // ==========================================
     const handleCreateProject = async () => {
+        // 🚨 TRAMPA PARA FANTASMAS: Verificamos el token antes de hacer nada
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            alert("Tu sesión ha finalizado. Por favor, inicia sesión de nuevo.");
+            navigate('/login');
+            return;
+        }
+
         if (projects.length >= PROJECT_LIMIT) {
             setNewProjectModalOpen(false);
-            setAiModalOpen(true); // Bloqueo por plan superado
+            setAiModalOpen(true); 
             return;
         }
         
@@ -64,24 +104,25 @@ export default function Projects() {
             return;
         }
 
-        // 🚨 SOLUCIÓN ERROR 500: Armamos el JSON exactamente como lo pide Swagger
         const payload = {
             name: newProjectName.trim(),
             description: newProjectDesc.trim() || 'Sin descripción',
-            ownerId: "USR-001", // ID de usuario por defecto
-            role: "Product Owner" // Rol por defecto al crear
+            ownerId: currentUsername, // Usamos el username real como owner
+            role: "Product Owner" 
         };
 
         try {
             const res = await fetch(`${API_BASE}/projects`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` // 🚨 MOSTRAMOS EL PASE VIP
+                },
                 body: JSON.stringify(payload)
             });
 
             if (res.ok) {
-                const createdProject = await res.json();
-                
+                await res.json();
                 fetchProjects(); // Recargamos la lista
                 setNewProjectName('');
                 setNewProjectDesc('');
@@ -98,10 +139,13 @@ export default function Projects() {
     // 3. ENTRAR AL PROYECTO (LA LLAVE DEL SISTEMA)
     // ==========================================
     const enterProject = (projectId) => {
-        // ¡Magia! Guardamos el ID en la memoria del navegador
         localStorage.setItem('current_project_id', projectId);
-        // Navegamos al Dashboard/Home
         navigate('/home');
+    };
+
+    const handleLogout = () => {
+        localStorage.clear();
+        navigate('/login');
     };
 
     return (
@@ -112,9 +156,14 @@ export default function Projects() {
                     <div className="plan-badge-container" onClick={() => setAiModalOpen(true)}>
                         <Tag value="Plan Light" severity="warning" icon="pi pi-bolt" className="plan-tag" />
                     </div>
+                    
+                    {/* Botón real para cerrar sesión */}
+                    <Button icon="pi pi-sign-out" rounded text severity="secondary" onClick={handleLogout} title="Cerrar Sesión" />
+                    
+                    {/* Perfil del usuario (te llevará a /profile en el futuro) */}
                     <div className="user-nav-profile" onClick={() => navigate('/profile')}>
-                        <span className="user-greeting">Hola, Sergio</span>
-                        <Avatar label="SA" shape="circle" className="nav-avatar" />
+                        <span className="user-greeting">Hola, {currentUsername}</span>
+                        <Avatar label={initials} shape="circle" className="nav-avatar" />
                     </div>
                 </div>
             </nav>

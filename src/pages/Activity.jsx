@@ -65,21 +65,23 @@ export default function Activity() {
 
         setIsLoading(true);
         try {
-            // 🚨 Usamos el currentProjectId
             const res = await fetch(`${API_BASE}/activities/project/${currentProjectId}`);
             if (res.ok) {
                 const data = await res.json();
                 
                 const formattedActivities = data.map(item => {
-                    const { date, time } = formatDateTime(item.createdAt || item.timestamp);
-                    const styles = getTypeStyles(item.type);
+                    const { date, time } = formatDateTime(item.createdAt);
+                    
+                    // 🚨 CORRECCIÓN: Leemos actionType en lugar de type
+                    const styles = getTypeStyles(item.actionType);
                     
                     return {
                         id: item.id,
-                        user: item.author || item.user || 'Sistema', 
-                        type: item.type || 'info',
-                        action: item.action || 'realizó una actualización',
-                        details: item.details || '',
+                        // 🚨 CORRECCIÓN: Traducimos las variables de Java a React
+                        user: item.authorName || 'Sistema', 
+                        type: item.actionType || 'info',
+                        action: item.content || 'realizó una actualización',
+                        details: item.extraDetails || '',
                         time: time,
                         date: date,
                         icon: styles.icon,

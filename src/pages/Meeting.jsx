@@ -11,13 +11,12 @@ import './Meeting.css';
 
 const API_BASE = 'http://localhost:8090/api/v1';
 
-// ⚠️ REEMPLAZA ESTO CON UN ID REAL DE TU SWAGGER (GET /api/v1/projects)
-// Si dejas un ID falso, PostgreSQL lanzará Error 500 por Foreign Key.
-const DEFAULT_PROJECT_ID = 'PON_AQUI_TU_ID_DE_PROYECTO'; 
-
 export default function Meeting() {
     const navigate = useNavigate();
     
+    // 🚀 MAGIA: Sacamos el ID del proyecto actual de la memoria
+    const currentProjectId = localStorage.getItem('current_project_id');
+
     // --- OBTENER FECHA LOCAL REAL ---
     const getLocalTodayString = () => {
         const today = new Date();
@@ -63,30 +62,29 @@ export default function Meeting() {
     ];
 
     // ==========================================
-    // 1. CARGAR DATOS DESDE SPRING BOOT
+    // 1. CARGAR DATOS DESDE SPRING BOOT (FILTRADOS)
     // ==========================================
     const fetchMeetingsAndRecordings = async () => {
+        if (!currentProjectId) {
+            navigate('/projects');
+            return;
+        }
+
         setIsLoading(true);
         try {
+            // 🚨 AHORA PEDIMOS SOLO LAS REUNIONES Y GRABACIONES DEL PROYECTO ACTUAL
             const [meetingsRes, recordingsRes] = await Promise.all([
-                fetch(`${API_BASE}/meetings`),
-                fetch(`${API_BASE}/recordings`)
+                fetch(`${API_BASE}/meetings/project/${currentProjectId}`),
+                fetch(`${API_BASE}/recordings/project/${currentProjectId}`)
             ]);
-
-            // SACAMOS EL ID DEL PROYECTO ACTUAL DE LA MEMORIA
-            const currentProjectId = localStorage.getItem('current_project_id');
 
             if (meetingsRes.ok) {
                 const mData = await meetingsRes.json();
-                // 🚨 MAGIA: Filtramos para que solo queden las de ESTE proyecto
-                const misReuniones = mData.filter(m => m.projectId === currentProjectId);
-                setMeetings(misReuniones);
+                setMeetings(mData);
             }
             if (recordingsRes.ok) {
                 const rData = await recordingsRes.json();
-                // 🚨 MAGIA: Filtramos para que solo queden las de ESTE proyecto
-                const misGrabaciones = rData.filter(r => r.projectId === currentProjectId);
-                setRecordings(misGrabaciones);
+                setRecordings(rData);
             }
         } catch (error) {
             console.error("Error al cargar datos:", error);
@@ -152,13 +150,13 @@ export default function Meeting() {
             return;
         }
 
-        // PAYLOAD EXACTO COMO LO PIDE JAVA
+        // 🚨 AGREGAMOS EL PROJECT ID REAL PARA QUE JAVA LO GUARDE BIEN
         const meetingPayload = { 
             title: title.trim(), 
             description: description || 'Revisión de avances',
             scheduledAt: createISOString(date, time), 
             meetingUrl: link || 'https://meet.google.com/', 
-            projectId: DEFAULT_PROJECT_ID 
+            projectId: currentProjectId 
         };
 
         try {
@@ -218,13 +216,14 @@ export default function Meeting() {
             return;
         }
 
+        // 🚨 AGREGAMOS EL PROJECT ID REAL PARA LA GRABACIÓN
         const recPayload = { 
             title: recTitle.trim(), 
             recordedAt: createISOString(recDate, "12:00"), 
             duration: recDuration || '--:--:--', 
             access: recAccess, 
             videoUrl: recLink || 'https://drive.google.com/',
-            projectId: DEFAULT_PROJECT_ID
+            projectId: currentProjectId
         };
 
         try {
@@ -309,11 +308,11 @@ export default function Meeting() {
                     <div className="nav-item" onClick={() => navigate('/members')}><i className="pi pi-users"></i> TEAM</div>
                     <div className="nav-item active" onClick={() => navigate('/meeting')}><i className="pi pi-video"></i> MEETINGS</div>
                     
-                    <div className="nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item" onClick={() => navigate('/activity')}>
                         <i className="pi pi-history"></i> ACTIVITY FEED
                         <span className="pro-text">PRO</span>
                     </div>
-                    <div className="nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item" onClick={() => navigate('/reports')}>
                         <i className="pi pi-file-export"></i> REPORTES
                         <span className="pro-text">PRO</span>
                     </div>
