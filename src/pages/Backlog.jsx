@@ -3,7 +3,7 @@ import { Button } from 'primereact/button';
 import { Tag } from 'primereact/tag';
 import { Dialog } from 'primereact/dialog';
 import { InputText } from 'primereact/inputtext';
-import { InputTextarea } from 'primereact/inputtextarea'; // 🚨 IMPORTAMOS EL TEXTAREA
+import { InputTextarea } from 'primereact/inputtextarea';
 import { Dropdown } from 'primereact/dropdown';
 import { Avatar } from 'primereact/avatar';
 import { useNavigate } from 'react-router-dom';
@@ -22,7 +22,7 @@ export default function Backlog() {
     const [isSprintModalOpen, setSprintModalOpen] = useState(false);
     const [isEpicModalOpen, setEpicModalOpen] = useState(false);
     const [isConfirmCloseSprintOpen, setConfirmCloseSprintOpen] = useState(false);
-    const [isAiModalOpen, setAiModalOpen] = useState(false);
+    const [isAiModalOpen, setAiModalOpen] = useState(false); // 🚨 Modal de Planes Premium
 
     // --- ESTADOS DE DATOS DINÁMICOS ---
     const [epics, setEpics] = useState([]);
@@ -47,7 +47,7 @@ export default function Backlog() {
     // --- ESTADOS DE FORMULARIOS ---
     const [editingStoryId, setEditingStoryId] = useState(null); 
     const [newStoryTitle, setNewStoryTitle] = useState('');
-    const [newStoryStatement, setNewStoryStatement] = useState(''); // 🚨 NUEVO: DESCRIPCIÓN
+    const [newStoryStatement, setNewStoryStatement] = useState('');
     const [newStoryEpicId, setNewStoryEpicId] = useState(null); 
     const [newStoryPoints, setNewStoryPoints] = useState('');
     const [newStoryUser, setNewStoryUser] = useState(null); 
@@ -62,6 +62,12 @@ export default function Backlog() {
     const [newEpicColor, setNewEpicColor] = useState('info');
 
     const [sprintToComplete, setSprintToComplete] = useState(null);
+
+    // 🚨 MANEJADOR DE CLICS PRO
+    const handleProClick = (e) => {
+        if (e) e.preventDefault();
+        setAiModalOpen(true);
+    };
 
     // 🚨 FUNCIÓN AUXILIAR: Obtener Cabeceras de Seguridad
     const getAuthHeaders = () => {
@@ -179,43 +185,22 @@ export default function Backlog() {
 
         try {
             const headers = getAuthHeaders(); 
+            const payload = {
+                title: newStoryTitle.trim(),
+                statement: newStoryStatement.trim(),
+                epicId: newStoryEpicId, 
+                sprintId: editingStorySprintId || null, 
+                points: parseInt(newStoryPoints) || 0,
+                assigneeId: newStoryUser || null,
+                status: newStoryStatus,
+                projectId: currentProjectId 
+            };
 
-            if (editingStoryId) {
-                // 🚨 PAYLOAD ACTUALIZADO CON STATEMENT
-                const putPayload = {
-                    title: newStoryTitle.trim(),
-                    statement: newStoryStatement.trim(),
-                    epicId: newStoryEpicId, 
-                    sprintId: editingStorySprintId || null, 
-                    points: parseInt(newStoryPoints) || 0,
-                    assigneeId: newStoryUser || null,
-                    status: newStoryStatus,
-                    projectId: currentProjectId 
-                };
-                const res = await fetch(`${API_BASE}/user-stories/${editingStoryId}`, {
-                    method: 'PUT',
-                    headers: headers,
-                    body: JSON.stringify(putPayload)
-                });
-                if (res.ok) fetchAllData(); 
-            } else {
-                // 🚨 PAYLOAD ACTUALIZADO CON STATEMENT
-                const postPayload = {
-                    title: newStoryTitle.trim(),
-                    epicId: newStoryEpicId, 
-                    sprintId: null, 
-                    statement: newStoryStatement.trim(),
-                    points: parseInt(newStoryPoints) || 0,
-                    assigneeId: newStoryUser || null,
-                    projectId: currentProjectId 
-                };
-                const res = await fetch(`${API_BASE}/user-stories`, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(postPayload)
-                });
-                if (res.ok) fetchAllData(); 
-            }
+            const url = editingStoryId ? `${API_BASE}/user-stories/${editingStoryId}` : `${API_BASE}/user-stories`;
+            const method = editingStoryId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, { method, headers, body: JSON.stringify(payload) });
+            if (res.ok) fetchAllData(); 
         } catch (error) {
             console.error("Error guardando historia", error);
         }
@@ -238,10 +223,7 @@ export default function Backlog() {
                 headers: getAuthHeaders(), 
                 body: JSON.stringify(sprintPayload)
             });
-
-            if (res.ok) {
-                fetchAllData();
-            }
+            if (res.ok) fetchAllData();
         } catch (error) {
             console.error("Error creando sprint", error);
         }
@@ -254,10 +236,7 @@ export default function Backlog() {
     
     const eliminarEpica = async (epicId) => {
         try {
-            await fetch(`${API_BASE}/epics/${epicId}`, { 
-                method: 'DELETE',
-                headers: getAuthHeaders() 
-            });
+            await fetch(`${API_BASE}/epics/${epicId}`, { method: 'DELETE', headers: getAuthHeaders() });
             setEpics(epics.filter(e => e.value !== epicId));
         } catch (error) {
             console.error("Error al eliminar épica", error);
@@ -267,7 +246,7 @@ export default function Backlog() {
     const abrirModalCrearHistoria = () => {
         setEditingStoryId(null);
         setNewStoryTitle('');
-        setNewStoryStatement(''); // 🚨 LIMPIAR TEXTO
+        setNewStoryStatement(''); 
         setNewStoryEpicId(null);
         setNewStoryPoints('');
         setNewStoryUser(null); 
@@ -279,7 +258,7 @@ export default function Backlog() {
     const abrirModalEditarHistoria = (story) => {
         setEditingStoryId(story.id);
         setNewStoryTitle(story.title);
-        setNewStoryStatement(story.statement || ''); // 🚨 CARGAR TEXTO
+        setNewStoryStatement(story.statement || ''); 
         setNewStoryEpicId(story.epicId);
         setNewStoryPoints(story.points);
         setNewStoryUser(story.assigneeId || null); 
@@ -290,10 +269,7 @@ export default function Backlog() {
 
     const eliminarHistoria = async (storyId) => {
         try {
-            await fetch(`${API_BASE}/user-stories/${storyId}`, { 
-                method: 'DELETE',
-                headers: getAuthHeaders() 
-            });
+            await fetch(`${API_BASE}/user-stories/${storyId}`, { method: 'DELETE', headers: getAuthHeaders() });
             fetchAllData();
         } catch (error) {
             console.error("Error eliminando historia", error);
@@ -305,12 +281,9 @@ export default function Backlog() {
 
         try {
             const res = await fetch(`${API_BASE}/sprints/${sprintToComplete}/complete`, { 
-                method: 'POST',
-                headers: getAuthHeaders() 
+                method: 'POST', headers: getAuthHeaders() 
             });
-            if (res.ok) {
-                fetchAllData(); 
-            }
+            if (res.ok) fetchAllData(); 
         } catch (error) {
             console.error("Error de conexión al completar el sprint", error);
         }
@@ -321,13 +294,8 @@ export default function Backlog() {
 
     const eliminarSprint = async (sprintId) => {
         try {
-            const res = await fetch(`${API_BASE}/sprints/${sprintId}`, { 
-                method: 'DELETE',
-                headers: getAuthHeaders() 
-            });
-            if (res.ok || res.status === 204 || res.status === 404) {
-                fetchAllData(); 
-            }
+            const res = await fetch(`${API_BASE}/sprints/${sprintId}`, { method: 'DELETE', headers: getAuthHeaders() });
+            if (res.ok || res.status === 204 || res.status === 404) fetchAllData(); 
         } catch (error) {
             console.error("Error eliminando sprint", error);
         }
@@ -384,8 +352,6 @@ export default function Backlog() {
 
         try {
             const updatedSprintId = targetZone === 'sprint' ? targetSprintId : null;
-            
-            // 🚨 AÑADIDO: Preservar el statement al mover con Drag&Drop
             const putPayload = {
                 title: movedStory.title,
                 statement: movedStory.statement || '', 
@@ -416,15 +382,8 @@ export default function Backlog() {
     };
 
     // --- FUNCIONES AUXILIARES PARA UI ---
-    const getEpicName = (epicId) => {
-        const foundEpic = epics.find(e => e.value === epicId);
-        return foundEpic ? foundEpic.label : 'Sin Épica';
-    };
-
-    const getEpicColor = (epicId) => {
-        const foundEpic = epics.find(e => e.value === epicId);
-        return foundEpic ? foundEpic.color : 'secondary';
-    };
+    const getEpicName = (epicId) => epics.find(e => e.value === epicId)?.label || 'Sin Épica';
+    const getEpicColor = (epicId) => epics.find(e => e.value === epicId)?.color || 'secondary';
 
     const renderStoryStatus = (status) => {
         switch(status) {
@@ -437,13 +396,10 @@ export default function Backlog() {
 
     const getAssigneeInitials = (assigneeId) => {
         if (!assigneeId || assigneeId === "") return null;
-        
         const member = teamMembers.find(m => m.value === assigneeId);
         if (!member) return 'U';
-
         const names = member.label.trim().split(' ');
-        if (names.length >= 2) return (names[0][0] + names[1][0]).toUpperCase();
-        return member.label.substring(0, 2).toUpperCase();
+        return names.length >= 2 ? (names[0][0] + names[1][0]).toUpperCase() : member.label.substring(0, 2).toUpperCase();
     };
 
     const confirmFooter = (
@@ -461,7 +417,7 @@ export default function Backlog() {
             onDragStart={(e) => handleDragStart(e, story.id, zone)}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDropOnCard(e, zone, index, sprintId)}
-            onClick={() => abrirModalEditarHistoria(story)} // 🚨 CLIC EN LA TARJETA ABRE EL DETALLE
+            onClick={() => abrirModalEditarHistoria(story)}
             style={{ cursor: 'pointer' }}
         >
             <div className="story-main">
@@ -477,7 +433,6 @@ export default function Backlog() {
                     <Avatar icon="pi pi-user" shape="circle" className="user-avatar empty-avatar" />
                 }
                 <div className="story-actions">
-                    {/* Botón de eliminar, con stopPropagation para que no abra el modal al borrar */}
                     <Button 
                         icon="pi pi-trash" 
                         className="p-button-rounded p-button-danger p-button-sm action-btn" 
@@ -501,15 +456,16 @@ export default function Backlog() {
                     <div className="nav-item" onClick={() => navigate('/members')}><i className="pi pi-users"></i> TEAM</div>
                     <div className="nav-item" onClick={() => navigate('/meeting')}><i className="pi pi-video"></i> MEETINGS</div>
                     
-                    <div className="nav-item" onClick={() => navigate('/activity')}>
+                    {/* 🔒 BLOQUEO EN SIDEBAR */}
+                    <div className="nav-item" onClick={handleProClick}>
                         <i className="pi pi-history"></i> ACTIVITY FEED
                         <span className="pro-text">PRO</span>
                     </div>
-                    <div className="nav-item" onClick={() => navigate('/reports')}>
+                    <div className="nav-item" onClick={handleProClick}>
                         <i className="pi pi-file-export"></i> REPORTES
                         <span className="pro-text">PRO</span>
                     </div>
-                    <div className="nav-item ai-nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item ai-nav-item" onClick={handleProClick}>
                         <i className="pi pi-sparkles" style={{ color: '#fbbf24' }}></i> 
                         <div className="ai-text"><span>ManageWise</span><span>AI</span></div>
                         <span className="pro-text">PRO</span>
@@ -611,6 +567,7 @@ export default function Backlog() {
                 </div>
             </main>
 
+            {/* MODALES DE CREACIÓN Y EDICIÓN */}
             <Dialog header="Administrar Épicas" visible={isEpicModalOpen} style={{ width: '450px' }} onHide={() => setEpicModalOpen(false)}>
                 <div className="modal-form">
                     <div className="epic-creation-zone">
@@ -645,7 +602,6 @@ export default function Backlog() {
                         <InputText value={newStoryTitle} onChange={(e) => setNewStoryTitle(e.target.value)} placeholder="Ej: Pantalla de Login" className="w-full" />
                     </div>
                     
-                    {/* 🚨 NUEVO: CAJA DE TEXTO GRANDE PARA LA DESCRIPCIÓN */}
                     <div className="field">
                         <label>Descripción (Historia de Usuario)</label>
                         <InputTextarea 
@@ -684,7 +640,6 @@ export default function Backlog() {
                             disabled={!editingStoryId} 
                         />
                     </div>
-                    
                     <div className="field">
                         <label>Puntos de Esfuerzo (Story Points)</label>
                         <InputText type="number" value={newStoryPoints} onChange={(e) => setNewStoryPoints(e.target.value)} placeholder="Ej: 5" className="w-full" />
@@ -718,8 +673,63 @@ export default function Backlog() {
                 </div>
             </Dialog>
 
-            <Dialog visible={isAiModalOpen} style={{ width: '90vw', maxWidth: '800px' }} onHide={() => setAiModalOpen(false)} className="pricing-dialog" showHeader={false} dismissableMask={true}>
-                {/* ... (Modal de Precios) ... */}
+            {/* 💎 MODAL DE PLANES (PRO) UNIFICADO */}
+            <Dialog 
+                visible={isAiModalOpen} 
+                style={{ width: '90vw', maxWidth: '800px' }} 
+                onHide={() => setAiModalOpen(false)}
+                className="pricing-dialog"
+                showHeader={false}
+                dismissableMask={true}
+            >
+                <div className="pricing-popup-container">
+                    <div className="popup-close-btn" onClick={() => setAiModalOpen(false)}>
+                        <i className="pi pi-times"></i>
+                    </div>
+                    <div className="upgrade-header">
+                        <h1>Actualiza tu Plan</h1>
+                        <p>ManageWise AI y las exportaciones avanzadas requieren una suscripción activa.</p>
+                    </div>
+                    <div className="pricing-grid">
+                        <div className="pricing-card">
+                            <div className="pricing-header">
+                                <h3>Light</h3>
+                                <p>Get the basics</p>
+                                <div className="price">
+                                    <span className="currency">$</span><span className="amount">0</span><span className="period">/mo</span>
+                                </div>
+                            </div>
+                            <div className="pricing-features">
+                                <ul>
+                                    <li><i className="pi pi-check"></i> Hasta 2 Proyectos</li>
+                                    <li><i className="pi pi-check"></i> 5 Colaboradores</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Exportación de Reportes</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Asistente ManageWise AI</li>
+                                </ul>
+                            </div>
+                            <Button label="Tu Plan Actual" className="p-button-outlined p-button-secondary w-full" disabled />
+                        </div>
+                        <div className="pricing-card popular">
+                            <div className="recommended-badge">RECOMENDADO</div>
+                            <div className="pricing-header">
+                                <h3>Pro Business</h3>
+                                <p>Grow your brand</p>
+                                <div className="price">
+                                    <span className="currency">$</span><span className="amount">29</span><span className="period">/mo</span>
+                                </div>
+                            </div>
+                            <div className="pricing-features">
+                                <ul>
+                                    <li><i className="pi pi-check"></i> Proyectos Ilimitados</li>
+                                    <li><i className="pi pi-check"></i> Ilimitados Colaboradores</li>
+                                    <li><i className="pi pi-check"></i> Reportes PDF y Excel y Power Bi</li>
+                                    <li><i className="pi pi-check"></i> <strong>ManageWise AI</strong></li>
+                                </ul>
+                            </div>
+                            <Button label="Actualizar a Pro" className="p-button-orange w-full" onClick={() => alert('Redirigiendo a pasarela de pago...')} />
+                        </div>
+                    </div>
+                </div>
             </Dialog>
         </div>
     );

@@ -15,15 +15,19 @@ export default function Home() {
     // 🚀 MAGIA: Sacamos el ID del proyecto actual de la memoria
     const currentProjectId = localStorage.getItem('current_project_id');
 
-    // 🚨 ESTA ES LA LÍNEA QUE FALTABA: Declaramos el estado del nombre del proyecto
     const [projectName, setProjectName] = useState('Cargando Proyecto...');
-
     const [availableSprints, setAvailableSprints] = useState([]);
     const [activeSprintId, setActiveSprintId] = useState(null); 
     const [sprintStories, setSprintStories] = useState([]); // Las historias reales del sprint
     const [loading, setLoading] = useState(true);
     
     const [isAiModalOpen, setAiModalOpen] = useState(false);
+
+    // 🚨 MANEJADOR DE CLICS PRO (Bloquea navegación y abre popup)
+    const handleProClick = (e) => {
+        if (e) e.preventDefault();
+        setAiModalOpen(true);
+    };
 
     // ==========================================
     // 1. CARGAR DATOS REALES (Filtrados por Proyecto y Seguros)
@@ -49,12 +53,10 @@ export default function Home() {
             };
 
             try {
-                // 🚨 TRUCO NINJA: Pedimos la lista general de proyectos para esquivar el error 405 de Java
-                // Y ahora todas llevan las cabeceras de seguridad
                 const [sprintsRes, storiesRes, projectsRes] = await Promise.all([
                     fetch(`${API_BASE}/sprints`, { headers }),
                     fetch(`${API_BASE}/user-stories`, { headers }),
-                    fetch(`${API_BASE}/projects`, { headers }) // 👈 Quitamos el /${currentProjectId}
+                    fetch(`${API_BASE}/projects`, { headers }) 
                 ]);
 
                 // 🚨 Buscamos nuestro proyecto en la lista
@@ -104,7 +106,6 @@ export default function Home() {
         if (!activeSprintId) return;
 
         const updateSprintStories = async () => {
-            // 🚨 SACAMOS EL TOKEN PARA ESTA PETICIÓN TAMBIÉN
             const token = localStorage.getItem('jwt_token');
             if (!token) return;
 
@@ -129,17 +130,14 @@ export default function Home() {
         updateSprintStories();
     }, [activeSprintId]);
 
-
     // ==========================================
     // 3. MATEMÁTICA REAL PARA LOS GRÁFICOS
     // ==========================================
     
-    // Total de puntos del Sprint seleccionado
     const totalPoints = sprintStories.reduce((sum, s) => sum + (s.points || 0), 0);
     const completedPoints = sprintStories.filter(s => s.status === 'DONE').reduce((sum, s) => sum + (s.points || 0), 0);
     const displayProgress = totalPoints > 0 ? Math.round((completedPoints / totalPoints) * 100) : 0;
 
-    // Calcular Esfuerzo del Equipo Real (Puntos por Desarrollador en este Sprint)
     const teamEffortLabels = [];
     const teamEffortPoints = [];
     
@@ -160,7 +158,6 @@ export default function Home() {
         }]
     };
 
-    // Calcular Distribución Real (Estado de las tareas)
     const countToDo = sprintStories.filter(s => !s.status || s.status === 'TO_DO').length;
     const countInProgress = sprintStories.filter(s => s.status === 'IN_PROGRESS').length;
     const countDone = sprintStories.filter(s => s.status === 'DONE').length;
@@ -174,7 +171,6 @@ export default function Home() {
         }]
     };
 
-    // Gráfico Burndown 
     const demoBurndown = [
         { day: 'Día 1', ideal: totalPoints, real: totalPoints },
         { day: 'Día 2', ideal: totalPoints * 0.8, real: totalPoints }, 
@@ -228,13 +224,14 @@ export default function Home() {
                     <div className="nav-item" onClick={() => navigate('/members')}><i className="pi pi-users"></i> TEAM</div>
                     <div className="nav-item" onClick={() => navigate('/meeting')}><i className="pi pi-video"></i> MEETINGS</div>
                     
-                    <div className="nav-item" onClick={() => navigate('/activity')}>
+                    {/* BLOQUEO DE RUTAS PRO EN SIDEBAR */}
+                    <div className="nav-item" onClick={handleProClick}>
                         <i className="pi pi-history"></i> ACTIVITY FEED <span className="pro-text">PRO</span>
                     </div>
-                    <div className="nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item" onClick={handleProClick}>
                         <i className="pi pi-file-export"></i> REPORTES <span className="pro-text">PRO</span>
                     </div>
-                    <div className="nav-item ai-nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item ai-nav-item" onClick={handleProClick}>
                         <i className="pi pi-sparkles" style={{ color: '#fbbf24' }}></i> 
                         <div className="ai-text"><span>ManageWise</span><span>AI</span></div>
                         <span className="pro-text">PRO</span>
@@ -251,16 +248,16 @@ export default function Home() {
                 <div className="content-inner">
                     <header className="content-header">
                         <div>
-                            {/* 🚨 AQUÍ INYECTAMOS EL NOMBRE */}
                             <h1>Dashboard: {projectName}</h1>
                             <p>Gestión avanzada de rendimiento para <strong>ManageWise</strong>.</p>
                         </div>
                         <div className="export-actions">
                             <span className="export-label">Exportar Reportes:</span>
                             <div className="export-buttons-group">
-                                <Button icon="pi pi-file-pdf" className="p-button-danger action-btn-sm" onClick={() => setAiModalOpen(true)} />
-                                <Button icon="pi pi-file-excel" className="p-button-outlined p-button-success action-btn-sm" onClick={() => setAiModalOpen(true)} />
-                                <Button icon="pi pi-chart-bar" className="p-button-outlined p-button-help action-btn-sm" onClick={() => setAiModalOpen(true)} />
+                                {/* BLOQUEO EN BOTONES DE EXPORTACIÓN */}
+                                <Button icon="pi pi-file-pdf" className="p-button-danger action-btn-sm" onClick={handleProClick} />
+                                <Button icon="pi pi-file-excel" className="p-button-outlined p-button-success action-btn-sm" onClick={handleProClick} />
+                                <Button icon="pi pi-chart-bar" className="p-button-outlined p-button-help action-btn-sm" onClick={handleProClick} />
                             </div>
                         </div>
                     </header>
@@ -365,9 +362,16 @@ export default function Home() {
                 </div>
             </main>
 
-            <Dialog visible={isAiModalOpen} style={{ width: '90vw', maxWidth: '800px' }} onHide={() => setAiModalOpen(false)} className="pricing-dialog" showHeader={false} dismissableMask={true}>
-                 {/* Modal de Precios */}
-                 <div className="pricing-popup-container">
+            {/* MODAL PLANES UNIFICADO Y ÚNICO */}
+            <Dialog 
+                visible={isAiModalOpen} 
+                style={{ width: '90vw', maxWidth: '800px' }} 
+                onHide={() => setAiModalOpen(false)}
+                className="pricing-dialog"
+                showHeader={false}
+                dismissableMask={true}
+            >
+                <div className="pricing-popup-container">
                     <div className="popup-close-btn" onClick={() => setAiModalOpen(false)}>
                         <i className="pi pi-times"></i>
                     </div>

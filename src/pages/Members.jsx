@@ -19,7 +19,7 @@ export default function Members() {
     const [isMemberModalOpen, setMemberModalOpen] = useState(false);
     const [isRoleModalOpen, setRoleModalOpen] = useState(false);
     const [editingMemberId, setEditingMemberId] = useState(null);
-    const [isAiModalOpen, setAiModalOpen] = useState(false);
+    const [isAiModalOpen, setAiModalOpen] = useState(false); // 🚨 Modal de Planes
     const [isLoading, setIsLoading] = useState(true);
 
     const [roles, setRoles] = useState([]);
@@ -42,6 +42,12 @@ export default function Members() {
         { label: 'Gris Oscuro', value: '#475569' }
     ];
 
+    // 🚨 MANEJADOR DE CLICS PRO
+    const handleProClick = (e) => {
+        if (e) e.preventDefault();
+        setAiModalOpen(true);
+    };
+
     // 🚨 FUNCIÓN AUXILIAR DE SEGURIDAD
     const getAuthHeaders = () => {
         const token = localStorage.getItem('jwt_token');
@@ -63,7 +69,7 @@ export default function Members() {
 
         setIsLoading(true);
         try {
-            const headers = getAuthHeaders(); // 🚨 Añadimos Token
+            const headers = getAuthHeaders(); 
 
             const [membersRes, rolesRes] = await Promise.all([
                 fetch(`${API_BASE}/team-members/project/${currentProjectId}`, { headers }), 
@@ -108,7 +114,7 @@ export default function Members() {
         try {
             const res = await fetch(`${API_BASE}/roles`, {
                 method: 'POST',
-                headers: getAuthHeaders(), // 🚨 Añadimos Token
+                headers: getAuthHeaders(),
                 body: JSON.stringify(rolePayload)
             });
             
@@ -126,7 +132,7 @@ export default function Members() {
         try {
             const res = await fetch(`${API_BASE}/roles/${roleId}`, { 
                 method: 'DELETE',
-                headers: getAuthHeaders() // 🚨 Añadimos Token
+                headers: getAuthHeaders() 
             });
             if (res.ok || res.status === 204) {
                 fetchData(); 
@@ -169,23 +175,17 @@ export default function Members() {
         };
 
         try {
-            const headers = getAuthHeaders(); // 🚨 Añadimos Token
+            const headers = getAuthHeaders(); 
+            const url = editingMemberId ? `${API_BASE}/team-members/${editingMemberId}` : `${API_BASE}/team-members`;
+            const method = editingMemberId ? 'PUT' : 'POST';
 
-            if (editingMemberId) {
-                const res = await fetch(`${API_BASE}/team-members/${editingMemberId}`, {
-                    method: 'PUT',
-                    headers: headers,
-                    body: JSON.stringify(memberPayload)
-                });
-                if (res.ok) fetchData();
-            } else {
-                const res = await fetch(`${API_BASE}/team-members`, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(memberPayload)
-                });
-                if (res.ok) fetchData();
-            }
+            const res = await fetch(url, {
+                method: method,
+                headers: headers,
+                body: JSON.stringify(memberPayload)
+            });
+            
+            if (res.ok) fetchData();
         } catch (error) {
             console.error("Error guardando el miembro:", error);
         }
@@ -197,7 +197,7 @@ export default function Members() {
         try {
             const res = await fetch(`${API_BASE}/team-members/${id}`, { 
                 method: 'DELETE',
-                headers: getAuthHeaders() // 🚨 Añadimos Token
+                headers: getAuthHeaders() 
             });
             if (res.ok || res.status === 204) {
                 fetchData();
@@ -257,15 +257,16 @@ export default function Members() {
                     <div className="nav-item active" onClick={() => navigate('/members')}><i className="pi pi-users"></i> TEAM</div>
                     <div className="nav-item" onClick={() => navigate('/meeting')}><i className="pi pi-video"></i> MEETINGS</div>
                     
-                    <div className="nav-item" onClick={() => navigate('/activity')}>
+                    {/* 🔒 BLOQUEO EN SIDEBAR */}
+                    <div className="nav-item" onClick={handleProClick}>
                         <i className="pi pi-history"></i> ACTIVITY FEED
                         <span className="pro-text">PRO</span>
                     </div>
-                    <div className="nav-item" onClick={() => navigate('/reports')}>
+                    <div className="nav-item" onClick={handleProClick}>
                         <i className="pi pi-file-export"></i> REPORTES
                         <span className="pro-text">PRO</span>
                     </div>
-                    <div className="nav-item ai-nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item ai-nav-item" onClick={handleProClick}>
                         <i className="pi pi-sparkles" style={{ color: '#fbbf24' }}></i> 
                         <div className="ai-text">
                             <span>ManageWise</span>
@@ -398,6 +399,7 @@ export default function Members() {
                 </div>
             </Dialog>
 
+            {/* 💎 MODAL PLANES UNIFICADO (ÚNICO) */}
             <Dialog 
                 visible={isAiModalOpen} 
                 style={{ width: '90vw', maxWidth: '800px' }} 
@@ -417,7 +419,6 @@ export default function Members() {
                     </div>
 
                     <div className="pricing-grid">
-                        {/* Contenido del modal premium */}
                         <div className="pricing-card">
                             <div className="pricing-header">
                                 <h3>Light</h3>
