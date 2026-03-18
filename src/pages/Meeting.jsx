@@ -102,6 +102,16 @@ export default function Meeting() {
         setMeetingModalOpen(true);
     };
 
+    const openEditMeetingModal = (meeting) => {
+        setEditingMeetingId(meeting.id);
+        setTitle(meeting.title);
+        setDescription(meeting.description || '');
+        setDate(extractDateFromISO(meeting.scheduledAt)); 
+        setTime(extractTimeFromISO(meeting.scheduledAt)); 
+        setLink(meeting.meetingUrl); 
+        setMeetingModalOpen(true);
+    };
+
     const saveMeeting = async () => {
         if (!title.trim() || !date || !time) {
             alert("El título, fecha y hora son obligatorios.");
@@ -136,7 +146,6 @@ export default function Meeting() {
         setRecordModalOpen(true);
     };
 
-    // 🚨 RESTAURAMOS LA FUNCIÓN PARA EDITAR GRABACIÓN
     const openEditRecordModal = (rec) => {
         setEditingRecordId(rec.id);
         setRecTitle(rec.title);
@@ -179,7 +188,12 @@ export default function Meeting() {
     );
     const linkBodyTemplate = (rowData) => <a href={rowData.videoUrl} target="_blank" rel="noreferrer" className="table-link-btn"><i className="pi pi-external-link"></i> Abrir</a>;
     const dateBodyTemplate = (rowData) => <span>{extractDateFromISO(rowData.recordedAt)}</span>;
-    const accessBodyTemplate = (rowData) => <Tag value={rowData.access} severity={rowData.access === 'Público' ? 'success' : 'warning'} />;
+    
+    // 🚨 AQUÍ ESTÁ LA SOLUCIÓN AL PUNTITO NARANJA: Si rowData.access viene vacío de la DB, le ponemos 'Público'
+    const accessBodyTemplate = (rowData) => {
+        const accesoReal = rowData.access || 'Público';
+        return <Tag value={accesoReal} severity={accesoReal === 'Público' ? 'success' : 'warning'} />;
+    };
 
     const tableHeader = (
         <div className="table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -234,32 +248,55 @@ export default function Meeting() {
                         </div>
                     ) : (
                         <>
-                            {/* SECCIÓN 1: REUNIONES */}
+                            {/* 🚨 ESTRUCTURA HTML ORIGINAL RESTAURADA PARA EL CSS */}
                             <div className="meetings-grid">
                                 {meetings.length === 0 && (
                                     <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: '#fff', borderRadius: '12px', width: '100%', gridColumn: '1 / -1' }}>
-                                        <i className="pi pi-calendar-times" style={{ fontSize: '3rem', color: '#cbd5e1', marginBottom: '1rem' }}></i>
+                                        <i className="pi pi-calendar-times" style={{ fontSize: '3rem', color: '#cbd5e1', marginBottom: '1rem', display: 'block' }}></i>
                                         <p style={{ color: '#64748b', margin: 0 }}>No hay reuniones programadas para este proyecto.</p>
                                     </div>
                                 )}
                                 
-                                {meetings.map(m => (
-                                    <div key={m.id} className="meeting-card">
-                                        <h3>{m.title} <Tag value={getMeetingStatus(m.scheduledAt).label} severity={getMeetingStatus(m.scheduledAt).severity} /></h3>
-                                        <p><i className="pi pi-calendar"></i> {extractDateFromISO(m.scheduledAt)} a las {extractTimeFromISO(m.scheduledAt)} Hrs</p>
-                                        <a href={m.meetingUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginBottom: '1rem', color: '#3b82f6', textDecoration: 'none' }}>
-                                            <i className="pi pi-external-link"></i> Unirse a la llamada
-                                        </a>
-                                        <div className="meeting-actions">
-                                            <Button icon="pi pi-trash" className="p-button-danger" onClick={() => deleteMeeting(m.id)} />
+                                {meetings.map(meeting => {
+                                    const status = getMeetingStatus(meeting.scheduledAt);
+                                    return (
+                                        <div key={meeting.id} className="meeting-card">
+                                            <div className="meeting-content">
+                                                
+                                                <div className="meeting-info-header">
+                                                    <h3>{meeting.title}</h3>
+                                                    <Tag value={status.label} severity={status.severity} />
+                                                </div>
+                                                
+                                                <div className="meeting-time-block">
+                                                    <div className="time-row">
+                                                        <i className="pi pi-calendar"></i>
+                                                        <span>{extractDateFromISO(meeting.scheduledAt)}</span>
+                                                    </div>
+                                                    <div className="time-row">
+                                                        <i className="pi pi-clock"></i>
+                                                        <span>{extractTimeFromISO(meeting.scheduledAt)} Hrs</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="meeting-footer">
+                                                    <a href={meeting.meetingUrl} target="_blank" rel="noopener noreferrer" className="join-btn">
+                                                        <i className="pi pi-video"></i> Entrar a la Reunión
+                                                    </a>
+                                                    <div className="meeting-actions">
+                                                        <Button icon="pi pi-pencil" className="p-button-rounded p-button-secondary action-btn" onClick={() => openEditMeetingModal(meeting)} />
+                                                        <Button icon="pi pi-trash" className="p-button-rounded p-button-danger action-btn" onClick={() => deleteMeeting(meeting.id)} />
+                                                    </div>
+                                                </div>
+
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             <hr style={{ margin: '3rem 0', borderColor: '#e2e8f0', opacity: 0.5 }} />
 
-                            {/* SECCIÓN 2: GRABACIONES */}
                             <div className="recordings-section">
                                 <h2 style={{ marginBottom: '1.5rem', color: '#1e293b' }}>Grabaciones Anteriores</h2>
                                 <DataTable value={recordings} header={tableHeader} globalFilter={globalFilter} emptyMessage="No se encontraron grabaciones." className="custom-datatable" responsiveLayout="scroll">
@@ -276,30 +313,31 @@ export default function Meeting() {
                 </div>
             </main>
 
-            {/* MODAL REUNIÓN */}
-            <Dialog header="Programar Reunión" visible={isMeetingModalOpen} style={{ width: '450px' }} onHide={() => setMeetingModalOpen(false)}>
+            {/* MODALES REUNIÓN Y GRABACIÓN */}
+            <Dialog header={editingMeetingId ? "Editar Reunión" : "Programar Nueva Reunión"} visible={isMeetingModalOpen} style={{ width: '450px' }} onHide={() => setMeetingModalOpen(false)}>
                 <div className="modal-form">
                     <div className="field">
                         <label>Título</label>
                         <InputText value={title} onChange={(e) => setTitle(e.target.value)} className="w-full" />
                     </div>
-                    <div className="field">
-                        <label>Fecha</label>
-                        <InputText type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full" />
-                    </div>
-                    <div className="field">
-                        <label>Hora</label>
-                        <InputText type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-full" />
+                    <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
+                        <div className="field half-width" style={{ flex: 1 }}>
+                            <label>Fecha</label>
+                            <InputText type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full" />
+                        </div>
+                        <div className="field half-width" style={{ flex: 1 }}>
+                            <label>Hora</label>
+                            <InputText type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-full" />
+                        </div>
                     </div>
                     <div className="field">
                         <label>Link (Meet/Zoom)</label>
                         <InputText type="url" value={link} onChange={(e) => setLink(e.target.value)} className="w-full" />
                     </div>
-                    <Button label="Guardar" className="p-button-orange w-full mt-4" onClick={saveMeeting} />
+                    <Button label={editingMeetingId ? "Actualizar Reunión" : "Guardar Reunión"} className="p-button-orange w-full mt-4" onClick={saveMeeting} />
                 </div>
             </Dialog>
 
-            {/* 🚨 MODAL GRABACIÓN (AHORA CON TODOS LOS CAMPOS) */}
             <Dialog header={editingRecordId ? "Editar Grabación" : "Añadir Grabación"} visible={isRecordModalOpen} style={{ width: '450px' }} onHide={() => setRecordModalOpen(false)}>
                 <div className="modal-form">
                     <div className="field">
@@ -324,7 +362,7 @@ export default function Meeting() {
                         <label>Link del Video (Drive/Youtube)</label>
                         <InputText type="url" value={recLink} onChange={(e) => setRecLink(e.target.value)} className="w-full" />
                     </div>
-                    <Button label="Guardar" className="p-button-orange w-full mt-4" onClick={saveRecording} />
+                    <Button label={editingRecordId ? "Actualizar Grabación" : "Guardar Grabación"} className="p-button-orange w-full mt-4" onClick={saveRecording} />
                 </div>
             </Dialog>
 
