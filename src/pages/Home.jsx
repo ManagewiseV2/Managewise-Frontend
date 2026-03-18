@@ -18,7 +18,7 @@ export default function Home() {
     const [activeSprintId, setActiveSprintId] = useState(null); 
     const [sprintStories, setSprintStories] = useState([]); 
     
-    // 🚨 NUEVO ESTADO: Guardamos los miembros para traducir IDs a Nombres
+    // 🚨 ESTADO: Guardamos los miembros para traducir IDs a Nombres
     const [teamMembers, setTeamMembers] = useState([]); 
     
     const [loading, setLoading] = useState(true);
@@ -51,7 +51,6 @@ export default function Home() {
             };
 
             try {
-                // 🚨 AÑADIMOS LA PETICIÓN DE MIEMBROS AQUÍ
                 const [sprintsRes, storiesRes, projectsRes, membersRes] = await Promise.all([
                     fetch(`${API_BASE}/sprints`, { headers }),
                     fetch(`${API_BASE}/user-stories`, { headers }),
@@ -67,7 +66,6 @@ export default function Home() {
                     localStorage.clear(); navigate('/login'); return;
                 }
 
-                // 🚨 GUARDAMOS LOS MIEMBROS
                 if (membersRes.ok) {
                     setTeamMembers(await membersRes.json());
                 }
@@ -124,14 +122,12 @@ export default function Home() {
     const completedPoints = sprintStories.filter(s => s.status === 'DONE').reduce((sum, s) => sum + (s.points || 0), 0);
     const displayProgress = totalPoints > 0 ? Math.round((completedPoints / totalPoints) * 100) : 0;
 
-    // 🚨 TRADUCCIÓN DE ID A NOMBRE PARA EL GRÁFICO
     const teamEffortLabels = [];
     const teamEffortPoints = [];
     
     const uniqueAssignees = [...new Set(sprintStories.map(s => s.assigneeId || null))];
     
     uniqueAssignees.forEach(assigneeId => {
-        // Buscamos el nombre del miembro. Si no hay ID, es "Sin asignar"
         let labelName = 'Sin asignar';
         if (assigneeId) {
             const member = teamMembers.find(m => String(m.id) === String(assigneeId));
@@ -170,7 +166,7 @@ export default function Home() {
         }]
     };
 
-    const demoBurndown = [
+    const sprintBurndown = [
         { day: 'Día 1', ideal: totalPoints, real: totalPoints },
         { day: 'Día 2', ideal: totalPoints * 0.8, real: totalPoints }, 
         { day: 'Día 3', ideal: totalPoints * 0.6, real: totalPoints * 0.8 }, 
@@ -180,11 +176,11 @@ export default function Home() {
     ];
 
     const burndownData = {
-        labels: demoBurndown.map(b => b.day),
+        labels: sprintBurndown.map(b => b.day),
         datasets: [
             {
                 label: 'Línea Ideal',
-                data: demoBurndown.map(b => b.ideal),
+                data: sprintBurndown.map(b => b.ideal),
                 borderColor: '#cbd5e1',
                 borderWidth: 3,
                 borderDash: [5, 5],
@@ -193,7 +189,7 @@ export default function Home() {
             },
             {
                 label: `Trabajo Restante Real`,
-                data: demoBurndown.map(b => b.real),
+                data: sprintBurndown.map(b => b.real),
                 borderColor: '#f97316',
                 borderWidth: 5, 
                 backgroundColor: 'rgba(249, 115, 22, 0.1)',
@@ -311,7 +307,8 @@ export default function Home() {
                             </div>
 
                             <div className="graphics-section">
-                                <Card className="grid-full main-card-chart" title={`BURNDOWN SIMULADO: ${activeSprintName.toUpperCase()}`}>
+                                {/* 🚨 AQUÍ ESTÁ EL CAMBIO: Título del Burndown actualizado */}
+                                <Card className="grid-full main-card-chart" title={`BURNDOWN: ${activeSprintName.toUpperCase()}`}>
                                     <div className="chart-container">
                                         <Chart type="line" data={burndownData} options={{ maintainAspectRatio: false }} style={{ height: '450px', width: '100%' }} />
                                     </div>
@@ -322,7 +319,6 @@ export default function Home() {
                                         <Chart type="pie" data={distributionData} style={{ height: '280px', width: '100%' }} />
                                     </Card>
                                     
-                                    {/* 🚨 AQUÍ EL GRÁFICO YA MOSTRARÁ LOS NOMBRES REALES */}
                                     <Card className="grid-half" title="Esfuerzo del Equipo (Pts Asignados)">
                                         <Chart type="bar" data={teamEffortData} options={{ scales: { y: { beginAtZero: true } } }} style={{ height: '280px', width: '100%' }} />
                                     </Card>
