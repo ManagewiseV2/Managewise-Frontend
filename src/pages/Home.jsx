@@ -18,7 +18,6 @@ export default function Home() {
     const [activeSprintId, setActiveSprintId] = useState(null); 
     const [sprintStories, setSprintStories] = useState([]); 
     
-    // 🚨 ESTADO: Guardamos los miembros para traducir IDs a Nombres
     const [teamMembers, setTeamMembers] = useState([]); 
     
     const [loading, setLoading] = useState(true);
@@ -116,11 +115,14 @@ export default function Home() {
     }, [activeSprintId]);
 
     // ==========================================
-    // MATEMÁTICA Y GRÁFICOS
+    // MATEMÁTICA Y GRÁFICOS REALES
     // ==========================================
     const totalPoints = sprintStories.reduce((sum, s) => sum + (s.points || 0), 0);
     const completedPoints = sprintStories.filter(s => s.status === 'DONE').reduce((sum, s) => sum + (s.points || 0), 0);
     const displayProgress = totalPoints > 0 ? Math.round((completedPoints / totalPoints) * 100) : 0;
+    
+    // 🚨 Cálculo Real del Burndown
+    const remainingPoints = totalPoints - completedPoints;
 
     const teamEffortLabels = [];
     const teamEffortPoints = [];
@@ -166,21 +168,13 @@ export default function Home() {
         }]
     };
 
-    const sprintBurndown = [
-        { day: 'Día 1', ideal: totalPoints, real: totalPoints },
-        { day: 'Día 2', ideal: totalPoints * 0.8, real: totalPoints }, 
-        { day: 'Día 3', ideal: totalPoints * 0.6, real: totalPoints * 0.8 }, 
-        { day: 'Día 4', ideal: totalPoints * 0.4, real: totalPoints * 0.5 }, 
-        { day: 'Día 5', ideal: totalPoints * 0.2, real: totalPoints - completedPoints }, 
-        { day: 'Hoy', ideal: 0, real: totalPoints - completedPoints } 
-    ];
-
+    // 🚨 DATOS REALES PARA EL BURNDOWN CHART
     const burndownData = {
-        labels: sprintBurndown.map(b => b.day),
+        labels: ['Inicio del Sprint', 'Estado Actual', 'Cierre Estimado'],
         datasets: [
             {
                 label: 'Línea Ideal',
-                data: sprintBurndown.map(b => b.ideal),
+                data: [totalPoints, totalPoints / 2, 0], // Tendencia matemática a 0
                 borderColor: '#cbd5e1',
                 borderWidth: 3,
                 borderDash: [5, 5],
@@ -189,12 +183,12 @@ export default function Home() {
             },
             {
                 label: `Trabajo Restante Real`,
-                data: sprintBurndown.map(b => b.real),
+                data: [totalPoints, remainingPoints, null], // Null hace que la línea pare en "Actual"
                 borderColor: '#f97316',
                 borderWidth: 5, 
                 backgroundColor: 'rgba(249, 115, 22, 0.1)',
                 fill: true,
-                tension: 0.4 
+                tension: 0.1 
             }
         ]
     };
@@ -307,7 +301,6 @@ export default function Home() {
                             </div>
 
                             <div className="graphics-section">
-                                {/* 🚨 AQUÍ ESTÁ EL CAMBIO: Título del Burndown actualizado */}
                                 <Card className="grid-full main-card-chart" title={`BURNDOWN: ${activeSprintName.toUpperCase()}`}>
                                     <div className="chart-container">
                                         <Chart type="line" data={burndownData} options={{ maintainAspectRatio: false }} style={{ height: '450px', width: '100%' }} />
