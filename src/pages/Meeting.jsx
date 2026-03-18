@@ -18,7 +18,7 @@ export default function Meeting() {
     // --- ESTADOS DE MODALES ---
     const [isMeetingModalOpen, setMeetingModalOpen] = useState(false);
     const [isRecordModalOpen, setRecordModalOpen] = useState(false);
-    const [isAiModalOpen, setAiModalOpen] = useState(false); // Modal de Planes
+    const [isAiModalOpen, setAiModalOpen] = useState(false); 
     
     const [editingMeetingId, setEditingMeetingId] = useState(null);
     const [editingRecordId, setEditingRecordId] = useState(null);
@@ -95,7 +95,13 @@ export default function Meeting() {
         return { label: 'PRÓXIMA', severity: 'info' };
     };
 
-    // --- GUARDAR Y ELIMINAR REUNIÓN ---
+    // --- LÓGICA DE REUNIONES ---
+    const openAddMeetingModal = () => {
+        setEditingMeetingId(null);
+        setTitle(''); setDescription(''); setDate(''); setTime(''); setLink('');
+        setMeetingModalOpen(true);
+    };
+
     const saveMeeting = async () => {
         if (!title.trim() || !date || !time) {
             alert("El título, fecha y hora son obligatorios.");
@@ -123,22 +129,34 @@ export default function Meeting() {
         fetchMeetingsAndRecordings();
     };
 
-    const openAddMeetingModal = () => {
-        setEditingMeetingId(null);
-        setTitle(''); setDescription(''); setDate(''); setTime(''); setLink('');
-        setMeetingModalOpen(true);
-    };
-
-    // --- GUARDAR Y ELIMINAR GRABACIÓN ---
+    // --- LÓGICA DE GRABACIONES ---
     const openAddRecordModal = () => {
         setEditingRecordId(null);
         setRecTitle(''); setRecDate(''); setRecDuration(''); setRecAccess('Público'); setRecLink('');
         setRecordModalOpen(true);
     };
 
+    // 🚨 RESTAURAMOS LA FUNCIÓN PARA EDITAR GRABACIÓN
+    const openEditRecordModal = (rec) => {
+        setEditingRecordId(rec.id);
+        setRecTitle(rec.title);
+        setRecDate(extractDateFromISO(rec.recordedAt) || '');
+        setRecDuration(rec.duration || '');
+        setRecAccess(rec.access || 'Público');
+        setRecLink(rec.videoUrl || '');
+        setRecordModalOpen(true);
+    };
+
     const saveRecording = async () => {
         if (!recTitle.trim() || !recDate) return;
-        const payload = { title: recTitle, recordedAt: createISOString(recDate, "12:00"), duration: recDuration, access: recAccess, videoUrl: recLink, projectId: currentProjectId };
+        const payload = { 
+            title: recTitle, 
+            recordedAt: createISOString(recDate, "12:00"), 
+            duration: recDuration, 
+            access: recAccess, 
+            videoUrl: recLink, 
+            projectId: currentProjectId 
+        };
         const method = editingRecordId ? 'PUT' : 'POST';
         const url = editingRecordId ? `${API_BASE}/recordings/${editingRecordId}` : `${API_BASE}/recordings`;
         
@@ -155,6 +173,7 @@ export default function Meeting() {
     // --- TEMPLATES PARA LA TABLA ---
     const actionBodyTemplate = (rowData) => (
         <div className="table-actions">
+            <Button icon="pi pi-pencil" className="p-button-rounded p-button-secondary action-btn-small mr-2" onClick={() => openEditRecordModal(rowData)} />
             <Button icon="pi pi-trash" className="p-button-rounded p-button-danger action-btn-small" onClick={() => deleteRecording(rowData.id)} />
         </div>
     );
@@ -240,7 +259,7 @@ export default function Meeting() {
 
                             <hr style={{ margin: '3rem 0', borderColor: '#e2e8f0', opacity: 0.5 }} />
 
-                            {/* SECCIÓN 2: GRABACIONES RESTAURADA */}
+                            {/* SECCIÓN 2: GRABACIONES */}
                             <div className="recordings-section">
                                 <h2 style={{ marginBottom: '1.5rem', color: '#1e293b' }}>Grabaciones Anteriores</h2>
                                 <DataTable value={recordings} header={tableHeader} globalFilter={globalFilter} emptyMessage="No se encontraron grabaciones." className="custom-datatable" responsiveLayout="scroll">
@@ -280,16 +299,26 @@ export default function Meeting() {
                 </div>
             </Dialog>
 
-            {/* MODAL GRABACIÓN */}
-            <Dialog header="Añadir Grabación" visible={isRecordModalOpen} style={{ width: '450px' }} onHide={() => setRecordModalOpen(false)}>
+            {/* 🚨 MODAL GRABACIÓN (AHORA CON TODOS LOS CAMPOS) */}
+            <Dialog header={editingRecordId ? "Editar Grabación" : "Añadir Grabación"} visible={isRecordModalOpen} style={{ width: '450px' }} onHide={() => setRecordModalOpen(false)}>
                 <div className="modal-form">
                     <div className="field">
                         <label>Título</label>
                         <InputText value={recTitle} onChange={(e) => setRecTitle(e.target.value)} className="w-full" />
                     </div>
+                    <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
+                        <div className="field half-width" style={{ flex: 1 }}>
+                            <label>Fecha</label>
+                            <InputText type="date" value={recDate} onChange={(e) => setRecDate(e.target.value)} className="w-full" />
+                        </div>
+                        <div className="field half-width" style={{ flex: 1 }}>
+                            <label>Duración</label>
+                            <InputText value={recDuration} onChange={(e) => setRecDuration(e.target.value)} placeholder="Ej: 01:20:00" className="w-full" />
+                        </div>
+                    </div>
                     <div className="field">
-                        <label>Fecha</label>
-                        <InputText type="date" value={recDate} onChange={(e) => setRecDate(e.target.value)} className="w-full" />
+                        <label>Nivel de Acceso</label>
+                        <Dropdown value={recAccess} options={accessOptions} onChange={(e) => setRecAccess(e.value)} className="w-full" />
                     </div>
                     <div className="field">
                         <label>Link del Video (Drive/Youtube)</label>
@@ -299,7 +328,7 @@ export default function Meeting() {
                 </div>
             </Dialog>
 
-            {/* MODAL PLANES (POPUPEADO) */}
+            {/* MODAL PLANES */}
             <Dialog visible={isAiModalOpen} onHide={() => setAiModalOpen(false)} showHeader={false} dismissableMask style={{ width: '90vw', maxWidth: '800px' }}>
                 <div className="pricing-popup-container">
                     <div className="upgrade-header">
