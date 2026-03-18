@@ -9,7 +9,7 @@ import { Dropdown } from 'primereact/dropdown';
 import { useNavigate } from 'react-router-dom';
 import './Meeting.css';
 
-const API_BASE = 'http://localhost:8090/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export default function Meeting() {
     const navigate = useNavigate();
@@ -61,8 +61,21 @@ export default function Meeting() {
         { label: 'Privado', value: 'Privado' }
     ];
 
+    // 🚨 FUNCIÓN AUXILIAR DE SEGURIDAD
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            navigate('/login');
+            throw new Error("No token found");
+        }
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        };
+    };
+
     // ==========================================
-    // 1. CARGAR DATOS DESDE SPRING BOOT (FILTRADOS)
+    // 1. CARGAR DATOS DESDE SPRING BOOT (FILTRADOS Y SEGUROS)
     // ==========================================
     const fetchMeetingsAndRecordings = async () => {
         if (!currentProjectId) {
@@ -72,16 +85,21 @@ export default function Meeting() {
 
         setIsLoading(true);
         try {
-            // 🚨 AHORA PEDIMOS SOLO LAS REUNIONES Y GRABACIONES DEL PROYECTO ACTUAL
+            const headers = getAuthHeaders(); // 🚨 Añadimos Token
+
             const [meetingsRes, recordingsRes] = await Promise.all([
-                fetch(`${API_BASE}/meetings/project/${currentProjectId}`),
-                fetch(`${API_BASE}/recordings/project/${currentProjectId}`)
+                fetch(`${API_BASE}/meetings/project/${currentProjectId}`, { headers }),
+                fetch(`${API_BASE}/recordings/project/${currentProjectId}`, { headers })
             ]);
 
             if (meetingsRes.ok) {
                 const mData = await meetingsRes.json();
                 setMeetings(mData);
+            } else if (meetingsRes.status === 401 || meetingsRes.status === 403) {
+                localStorage.clear();
+                navigate('/login');
             }
+
             if (recordingsRes.ok) {
                 const rData = await recordingsRes.json();
                 setRecordings(rData);
@@ -150,7 +168,6 @@ export default function Meeting() {
             return;
         }
 
-        // 🚨 AGREGAMOS EL PROJECT ID REAL PARA QUE JAVA LO GUARDE BIEN
         const meetingPayload = { 
             title: title.trim(), 
             description: description || 'Revisión de avances',
@@ -160,17 +177,19 @@ export default function Meeting() {
         };
 
         try {
+            const headers = getAuthHeaders(); // 🚨 Añadimos Token
+
             if (editingMeetingId) {
                 const res = await fetch(`${API_BASE}/meetings/${editingMeetingId}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(meetingPayload)
                 });
                 if (res.ok) fetchMeetingsAndRecordings();
             } else {
                 const res = await fetch(`${API_BASE}/meetings`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(meetingPayload)
                 });
                 if (res.ok) fetchMeetingsAndRecordings();
@@ -184,7 +203,10 @@ export default function Meeting() {
 
     const deleteMeeting = async (id) => {
         try {
-            const res = await fetch(`${API_BASE}/meetings/${id}`, { method: 'DELETE' });
+            const res = await fetch(`${API_BASE}/meetings/${id}`, { 
+                method: 'DELETE',
+                headers: getAuthHeaders() // 🚨 Añadimos Token
+            });
             if (res.ok || res.status === 204) fetchMeetingsAndRecordings();
         } catch (error) {
             console.error("Error al eliminar la reunión", error);
@@ -216,7 +238,6 @@ export default function Meeting() {
             return;
         }
 
-        // 🚨 AGREGAMOS EL PROJECT ID REAL PARA LA GRABACIÓN
         const recPayload = { 
             title: recTitle.trim(), 
             recordedAt: createISOString(recDate, "12:00"), 
@@ -227,17 +248,19 @@ export default function Meeting() {
         };
 
         try {
+            const headers = getAuthHeaders(); // 🚨 Añadimos Token
+
             if (editingRecordId) {
                 const res = await fetch(`${API_BASE}/recordings/${editingRecordId}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(recPayload)
                 });
                 if (res.ok) fetchMeetingsAndRecordings();
             } else {
                 const res = await fetch(`${API_BASE}/recordings`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(recPayload)
                 });
                 if (res.ok) fetchMeetingsAndRecordings();
@@ -251,7 +274,10 @@ export default function Meeting() {
 
     const deleteRecording = async (id) => {
         try {
-            const res = await fetch(`${API_BASE}/recordings/${id}`, { method: 'DELETE' });
+            const res = await fetch(`${API_BASE}/recordings/${id}`, { 
+                method: 'DELETE',
+                headers: getAuthHeaders() // 🚨 Añadimos Token
+            });
             if (res.ok || res.status === 204) fetchMeetingsAndRecordings();
         } catch (error) {
             console.error("Error al eliminar la grabación", error);
@@ -485,6 +511,7 @@ export default function Meeting() {
                     </div>
 
                     <div className="pricing-grid">
+                        {/* Contenido del modal premium */}
                         <div className="pricing-card">
                             <div className="pricing-header">
                                 <h3>Light</h3>

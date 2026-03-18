@@ -8,7 +8,7 @@ import { Avatar } from 'primereact/avatar';
 import { useNavigate } from 'react-router-dom';
 import './Members.css';
 
-const API_BASE = 'http://localhost:8090/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export default function Members() {
     const navigate = useNavigate();
@@ -42,6 +42,19 @@ export default function Members() {
         { label: 'Gris Oscuro', value: '#475569' }
     ];
 
+    // 🚨 FUNCIÓN AUXILIAR DE SEGURIDAD
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            navigate('/login');
+            throw new Error("No token found");
+        }
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        };
+    };
+
     const fetchData = async () => {
         if (!currentProjectId) {
             navigate('/projects');
@@ -50,15 +63,21 @@ export default function Members() {
 
         setIsLoading(true);
         try {
+            const headers = getAuthHeaders(); // 🚨 Añadimos Token
+
             const [membersRes, rolesRes] = await Promise.all([
-                fetch(`${API_BASE}/team-members/project/${currentProjectId}`), 
-                fetch(`${API_BASE}/roles/project/${currentProjectId}`) // ✅ SOLUCIONADO
+                fetch(`${API_BASE}/team-members/project/${currentProjectId}`, { headers }), 
+                fetch(`${API_BASE}/roles/project/${currentProjectId}`, { headers }) 
             ]);
 
             if (membersRes.ok) {
                 const membersData = await membersRes.json();
                 setMembers(membersData);
+            } else if (membersRes.status === 401 || membersRes.status === 403) {
+                localStorage.clear();
+                navigate('/login');
             }
+
             if (rolesRes.ok) {
                 const rolesData = await rolesRes.json();
                 setRoles(rolesData);
@@ -79,7 +98,6 @@ export default function Members() {
         
         const safeValue = newRoleName.trim().toUpperCase().replace(/\s+/g, '_');
         
-        // 🚨 SOLUCIÓN: Agregamos projectId: currentProjectId aquí 👇
         const rolePayload = { 
             label: newRoleName, 
             value: safeValue, 
@@ -90,12 +108,12 @@ export default function Members() {
         try {
             const res = await fetch(`${API_BASE}/roles`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(), // 🚨 Añadimos Token
                 body: JSON.stringify(rolePayload)
             });
             
             if (res.ok) {
-                fetchData(); // Recarga la lista de roles
+                fetchData(); 
                 setNewRoleName('');
                 setNewRoleColor('#0ea5e9');
             }
@@ -106,7 +124,10 @@ export default function Members() {
 
     const eliminarRol = async (roleId) => {
         try {
-            const res = await fetch(`${API_BASE}/roles/${roleId}`, { method: 'DELETE' });
+            const res = await fetch(`${API_BASE}/roles/${roleId}`, { 
+                method: 'DELETE',
+                headers: getAuthHeaders() // 🚨 Añadimos Token
+            });
             if (res.ok || res.status === 204) {
                 fetchData(); 
             }
@@ -144,21 +165,23 @@ export default function Members() {
             role: role,
             email: email || 'Sin especificar',
             location: address || 'Sin especificar', 
-            projectId: currentProjectId // 🚨 Añadido el ID real al guardar
+            projectId: currentProjectId 
         };
 
         try {
+            const headers = getAuthHeaders(); // 🚨 Añadimos Token
+
             if (editingMemberId) {
                 const res = await fetch(`${API_BASE}/team-members/${editingMemberId}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(memberPayload)
                 });
                 if (res.ok) fetchData();
             } else {
                 const res = await fetch(`${API_BASE}/team-members`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(memberPayload)
                 });
                 if (res.ok) fetchData();
@@ -172,7 +195,10 @@ export default function Members() {
 
     const deleteMember = async (id) => {
         try {
-            const res = await fetch(`${API_BASE}/team-members/${id}`, { method: 'DELETE' });
+            const res = await fetch(`${API_BASE}/team-members/${id}`, { 
+                method: 'DELETE',
+                headers: getAuthHeaders() // 🚨 Añadimos Token
+            });
             if (res.ok || res.status === 204) {
                 fetchData();
             }
@@ -327,7 +353,7 @@ export default function Members() {
                         <InputText type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Ej: correo@empresa.com" className="w-full" />
                     </div>
                     <div className="field">
-                        <label>Dirección / Ubicación (Opcional)</label>
+                        <label>Dirección / Ubicación (Para enviar invitación)</label>
                         <InputText value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Ej: Lima, Peru" className="w-full" />
                     </div>
                     

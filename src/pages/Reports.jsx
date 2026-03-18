@@ -12,7 +12,7 @@ import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import './Reports.css';
 
-const API_BASE = 'http://localhost:8090/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export default function Reports() {
     const navigate = useNavigate();
@@ -56,8 +56,21 @@ export default function Reports() {
         setTimeout(() => setCopied(false), 2000);
     };
 
+    // 🚨 FUNCIÓN AUXILIAR DE SEGURIDAD
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            navigate('/login');
+            throw new Error("No token found");
+        }
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        };
+    };
+
     // ==========================================
-    // 1. DESCARGAR DATOS FILTRADOS DEL PROYECTO
+    // 1. DESCARGAR DATOS FILTRADOS Y SEGUROS
     // ==========================================
     const fetchBaseData = async () => {
         if (!currentProjectId) {
@@ -67,11 +80,13 @@ export default function Reports() {
 
         setIsUpdating(true);
         try {
-            // 🚨 AHORA LLAMAMOS A LAS RUTAS FILTRADAS POR PROYECTO
+            const headers = getAuthHeaders(); // 🚨 Añadimos Token
+
+            // 🚨 AHORA LLAMAMOS A LAS RUTAS CON SEGURIDAD
             const [storiesRes, sprintsRes, projectsRes] = await Promise.all([
-                fetch(`${API_BASE}/user-stories/project/${currentProjectId}`),
-                fetch(`${API_BASE}/sprints/project/${currentProjectId}`),
-                fetch(`${API_BASE}/projects`) // Truco ninja para sacar el nombre sin errores
+                fetch(`${API_BASE}/user-stories/project/${currentProjectId}`, { headers }),
+                fetch(`${API_BASE}/sprints/project/${currentProjectId}`, { headers }),
+                fetch(`${API_BASE}/projects`, { headers }) 
             ]);
 
             // Extraer nombre del proyecto
@@ -79,6 +94,10 @@ export default function Reports() {
                 const allProjects = await projectsRes.json();
                 const miProyecto = allProjects.find(p => p.id === currentProjectId);
                 if (miProyecto) setProjectName(miProyecto.name);
+            } else if (projectsRes.status === 401 || projectsRes.status === 403) {
+                localStorage.clear();
+                navigate('/login');
+                return;
             }
 
             if (storiesRes.ok && sprintsRes.ok) {

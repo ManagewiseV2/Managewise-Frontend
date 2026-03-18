@@ -5,6 +5,9 @@ import { Password } from 'primereact/password';
 import { Button } from 'primereact/button';
 import './Login.css';
 
+// 🚨 Reemplazamos el localhost por la variable de entorno
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
+
 export default function Auth() {
   const navigate = useNavigate();
 
@@ -29,14 +32,15 @@ export default function Auth() {
     }, 400);
   };
 
-  // 🚨 LÓGICA DE LOGIN REAL
+  // 🚨 LÓGICA DE LOGIN REAL ACTUALIZADA
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8090/api/v1/auth/sign-in', {
+      // 🚨 Usamos API_BASE en lugar del localhost duro
+      const response = await fetch(`${API_BASE}/auth/sign-in`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -48,6 +52,22 @@ export default function Auth() {
         // 🔐 ¡MAGIA! Guardamos el Token VIP en el navegador
         localStorage.setItem('jwt_token', data.token);
         localStorage.setItem('current_username', username); // Para saludar al usuario en el header
+
+        // 🚨 LA NUEVA MAGIA: Buscamos el correo antes de ir a Proyectos
+        try {
+          // 🚨 Usamos API_BASE en lugar del localhost duro
+          const userRes = await fetch(`${API_BASE}/users/${username}`, {
+              headers: { 'Authorization': `Bearer ${data.token}` }
+          });
+          
+          if (userRes.ok) {
+              const userData = await userRes.json();
+              // ¡Guardamos el correo real en la mochila!
+              localStorage.setItem('current_email', userData.email); 
+          }
+        } catch (emailError) {
+          console.error("No se pudo cargar el correo durante el login", emailError);
+        }
         
         navigate('/projects'); 
       } else {
@@ -67,7 +87,8 @@ export default function Auth() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8090/api/v1/auth/sign-up', {
+      // 🚨 Usamos API_BASE en lugar del localhost duro
+      const response = await fetch(`${API_BASE}/auth/sign-up`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

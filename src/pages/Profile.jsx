@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from 'primereact/button';
 import { InputText } from 'primereact/inputtext';
-import { Password } from 'primereact/password';
 import { Avatar } from 'primereact/avatar';
 import { Dialog } from 'primereact/dialog';
 import './Profile.css';
 
-const API_BASE = 'http://localhost:8090/api/v1/auth'; // 🚨 Ruta de tu IAM
+// 🚨 Apuntamos a /users para el borrado y obtener datos
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export default function Profile() {
     const navigate = useNavigate();
@@ -17,26 +17,55 @@ export default function Profile() {
     const initials = currentUsername.substring(0, 2).toUpperCase();
 
     // --- ESTADOS ---
-    const [name, setName] = useState('Sergio André Gómez Vallejos');
-    const [email, setEmail] = useState('sergio@gmail.com');
-    const [currentPassword, setCurrentPassword] = useState('');
-    const [newPassword, setNewPassword] = useState('');
-    
     const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    
+    // Estado para guardar la info real que viene de Java
+    const [userData, setUserData] = useState({
+        fullName: 'Cargando...',
+        email: 'Cargando...'
+    });
 
-    // --- ACCIONES ---
-    const handleSave = () => {
-        alert("Perfil actualizado correctamente");
-    };
+    // ==========================================
+    // 1. OBTENER DATOS REALES DEL USUARIO
+    // ==========================================
+    useEffect(() => {
+        const fetchUserData = async () => {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) return;
 
-    // 🚨 LOGOUT REAL: Limpia la "mochila" y sale
+            try {
+                // Hacemos una petición GET a Java para traer el nombre y correo
+                const res = await fetch(`${API_BASE}/${encodeURIComponent(currentUsername)}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    setUserData({
+                        fullName: data.fullName || 'No especificado',
+                        email: data.email || 'No especificado'
+                    });
+                }
+            } catch (error) {
+                console.error("Error al cargar perfil:", error);
+                setUserData({ fullName: 'Error al cargar', email: 'Error al cargar' });
+            }
+        };
+
+        fetchUserData();
+    }, [currentUsername]);
+
+    // ==========================================
+    // 2. ACCIONES
+    // ==========================================
     const handleLogout = () => {
         localStorage.clear();
         navigate('/login');
     };
 
-    // 🚨 ELIMINACIÓN REAL: Conexión con el Backend
     const confirmAccountDeletion = async () => {
         const token = localStorage.getItem('jwt_token');
         if (!token) {
@@ -46,10 +75,11 @@ export default function Profile() {
 
         setIsLoading(true);
         try {
-            const res = await fetch(`${API_BASE}/delete-account/${currentUsername}`, {
+            const res = await fetch(`${API_BASE}/${encodeURIComponent(currentUsername)}`, {
                 method: 'DELETE',
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
                 }
             });
 
@@ -58,8 +88,7 @@ export default function Profile() {
                 localStorage.clear();
                 navigate('/login');
             } else {
-                const errorData = await res.json();
-                alert(`Error: ${errorData.message || "No se pudo eliminar la cuenta"}`);
+                alert(`Error del servidor: ${res.status}. Revisa la consola.`);
             }
         } catch (error) {
             console.error("Error al conectar con el servidor:", error);
@@ -70,6 +99,7 @@ export default function Profile() {
         }
     };
 
+    // --- UI DEL MODAL ---
     const deleteModalFooter = (
         <div style={{ display: 'flex', gap: '15px', justifyContent: 'flex-end', alignItems: 'center' }}>
             <Button 
@@ -103,43 +133,30 @@ export default function Profile() {
                     <div className="profile-header-card">
                         <div className="avatar-section">
                             <Avatar label={initials} size="xlarge" shape="circle" className="profile-big-avatar" />
-                            <Button label="Cambiar Foto" icon="pi pi-camera" className="p-button-outlined p-button-secondary p-button-sm" />
                         </div>
                         <div className="profile-title-info">
                             <h2>Mi Perfil ({currentUsername})</h2>
-                            <p>Administra tu información personal y la seguridad de tu cuenta.</p>
+                            <p>Información actual de tu cuenta. Modo de solo lectura.</p>
                         </div>
                     </div>
 
                     <div className="profile-body-grid">
+                        
+                        {/* 🚨 INFORMACIÓN BÁSICA (SOLO LECTURA) */}
                         <div className="settings-card">
                             <h3>Información Básica</h3>
                             <hr />
                             <div className="form-group">
                                 <label>Nombre Completo</label>
-                                <InputText value={name} onChange={(e) => setName(e.target.value)} className="w-full" />
+                                <InputText value={userData.fullName} disabled readOnly className="w-full bg-gray-100 cursor-auto" />
                             </div>
                             <div className="form-group">
                                 <label>Correo Electrónico</label>
-                                <InputText type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full" />
+                                <InputText value={userData.email} disabled readOnly className="w-full bg-gray-100 cursor-auto" />
                             </div>
-                            <Button label="Guardar Cambios" className="p-button-orange mt-3" onClick={handleSave} />
                         </div>
 
-                        <div className="settings-card">
-                            <h3>Seguridad</h3>
-                            <hr />
-                            <div className="form-group">
-                                <label>Contraseña Actual</label>
-                                <Password value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} toggleMask className="w-full" inputClassName="w-full" feedback={false} />
-                            </div>
-                            <div className="form-group">
-                                <label>Nueva Contraseña</label>
-                                <Password value={newPassword} onChange={(e) => setNewPassword(e.target.value)} toggleMask className="w-full" inputClassName="w-full" />
-                            </div>
-                            <Button label="Actualizar Contraseña" className="btn-dark mt-3" />
-                        </div>
-
+                        {/* 🚨 ZONA DE PELIGRO Y LOGOUT */}
                         <div className="settings-card danger-zone">
                             <h3>Gestión de Cuenta</h3>
                             <hr />
@@ -157,6 +174,7 @@ export default function Profile() {
                 </div>
             </main>
 
+            {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
             <Dialog header="¿Eliminar cuenta?" visible={isDeleteModalOpen} style={{ width: '480px' }} footer={deleteModalFooter} onHide={() => setDeleteModalOpen(false)}>
                 <div className="confirmation-content" style={{ display: 'flex', alignItems: 'flex-start', gap: '1.2rem', marginTop: '1rem' }}>
                     <i className="pi pi-exclamation-triangle" style={{ fontSize: '2.5rem', color: '#ef4444', marginTop: '0.2rem' }} />

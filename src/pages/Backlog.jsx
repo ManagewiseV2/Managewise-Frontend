@@ -3,12 +3,13 @@ import { Button } from 'primereact/button';
 import { Tag } from 'primereact/tag';
 import { Dialog } from 'primereact/dialog';
 import { InputText } from 'primereact/inputtext';
+import { InputTextarea } from 'primereact/inputtextarea'; // 🚨 IMPORTAMOS EL TEXTAREA
 import { Dropdown } from 'primereact/dropdown';
 import { Avatar } from 'primereact/avatar';
 import { useNavigate } from 'react-router-dom';
 import './Backlog.css';
 
-const API_BASE = 'http://localhost:8090/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export default function Backlog() {
     const navigate = useNavigate();
@@ -46,6 +47,7 @@ export default function Backlog() {
     // --- ESTADOS DE FORMULARIOS ---
     const [editingStoryId, setEditingStoryId] = useState(null); 
     const [newStoryTitle, setNewStoryTitle] = useState('');
+    const [newStoryStatement, setNewStoryStatement] = useState(''); // 🚨 NUEVO: DESCRIPCIÓN
     const [newStoryEpicId, setNewStoryEpicId] = useState(null); 
     const [newStoryPoints, setNewStoryPoints] = useState('');
     const [newStoryUser, setNewStoryUser] = useState(null); 
@@ -61,8 +63,21 @@ export default function Backlog() {
 
     const [sprintToComplete, setSprintToComplete] = useState(null);
 
+    // 🚨 FUNCIÓN AUXILIAR: Obtener Cabeceras de Seguridad
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            navigate('/login');
+            throw new Error("No token found");
+        }
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        };
+    };
+
     // ==========================================
-    // 1. CARGA INICIAL (Conectada al Backend Multi-Tenant)
+    // 1. CARGA INICIAL
     // ==========================================
     const fetchAllData = async () => {
         if (!currentProjectId) {
@@ -72,12 +87,13 @@ export default function Backlog() {
 
         setIsLoading(true);
         try {
-            // 🚨 AHORA LLAMAMOS A LAS RUTAS FILTRADAS DE JAVA
+            const headers = getAuthHeaders(); 
+
             const [epicsRes, sprintsRes, storiesRes, membersRes] = await Promise.all([
-                fetch(`${API_BASE}/epics`), // (Asumiendo que a epics aún no le haces la ruta de project)
-                fetch(`${API_BASE}/sprints/project/${currentProjectId}`), // ✅ Filtrado desde Java
-                fetch(`${API_BASE}/user-stories/project/${currentProjectId}`), // ✅ Filtrado desde Java
-                fetch(`${API_BASE}/team-members/project/${currentProjectId}`) // ✅ Filtrado desde Java
+                fetch(`${API_BASE}/epics`, { headers }), 
+                fetch(`${API_BASE}/sprints/project/${currentProjectId}`, { headers }), 
+                fetch(`${API_BASE}/user-stories/project/${currentProjectId}`, { headers }), 
+                fetch(`${API_BASE}/team-members/project/${currentProjectId}`, { headers }) 
             ]);
 
             if (epicsRes.ok) {
@@ -99,7 +115,6 @@ export default function Backlog() {
             }
 
             if (sprintsRes.ok && storiesRes.ok) {
-                // 🚨 RECIBIMOS LOS DATOS YA FILTRADOS POR JAVA (Ya no filtramos aquí en React)
                 const misSprints = await sprintsRes.json();
                 const misHistorias = await storiesRes.json();
 
@@ -115,6 +130,9 @@ export default function Backlog() {
 
                 setSprints(formattedSprints);
                 setProductBacklog(backlogStories);
+            } else if (sprintsRes.status === 401 || sprintsRes.status === 403) {
+                localStorage.clear();
+                navigate('/login');
             }
         } catch (error) {
             console.error("Error cargando los datos del Backlog:", error);
@@ -128,7 +146,7 @@ export default function Backlog() {
     }, []);
 
     // ==========================================
-    // 2. CREACIÓN (AÑADIENDO PROJECT_ID PARA NO DAR ERROR 500)
+    // 2. CREACIÓN & EDICIÓN
     // ==========================================
     const crearEpica = async () => {
         if (!newEpicName.trim()) return;
@@ -140,7 +158,7 @@ export default function Backlog() {
         try {
             const response = await fetch(`${API_BASE}/epics`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(), 
                 body: JSON.stringify(nuevaEpicaPayload)
             });
             if (response.ok) {
@@ -160,9 +178,13 @@ export default function Backlog() {
         }
 
         try {
+            const headers = getAuthHeaders(); 
+
             if (editingStoryId) {
+                // 🚨 PAYLOAD ACTUALIZADO CON STATEMENT
                 const putPayload = {
                     title: newStoryTitle.trim(),
+                    statement: newStoryStatement.trim(),
                     epicId: newStoryEpicId, 
                     sprintId: editingStorySprintId || null, 
                     points: parseInt(newStoryPoints) || 0,
@@ -172,22 +194,24 @@ export default function Backlog() {
                 };
                 const res = await fetch(`${API_BASE}/user-stories/${editingStoryId}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(putPayload)
                 });
                 if (res.ok) fetchAllData(); 
             } else {
+                // 🚨 PAYLOAD ACTUALIZADO CON STATEMENT
                 const postPayload = {
                     title: newStoryTitle.trim(),
                     epicId: newStoryEpicId, 
                     sprintId: null, 
+                    statement: newStoryStatement.trim(),
                     points: parseInt(newStoryPoints) || 0,
                     assigneeId: newStoryUser || null,
                     projectId: currentProjectId 
                 };
                 const res = await fetch(`${API_BASE}/user-stories`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: JSON.stringify(postPayload)
                 });
                 if (res.ok) fetchAllData(); 
@@ -211,7 +235,7 @@ export default function Backlog() {
         try {
             const res = await fetch(`${API_BASE}/sprints`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(), 
                 body: JSON.stringify(sprintPayload)
             });
 
@@ -230,7 +254,10 @@ export default function Backlog() {
     
     const eliminarEpica = async (epicId) => {
         try {
-            await fetch(`${API_BASE}/epics/${epicId}`, { method: 'DELETE' });
+            await fetch(`${API_BASE}/epics/${epicId}`, { 
+                method: 'DELETE',
+                headers: getAuthHeaders() 
+            });
             setEpics(epics.filter(e => e.value !== epicId));
         } catch (error) {
             console.error("Error al eliminar épica", error);
@@ -240,6 +267,7 @@ export default function Backlog() {
     const abrirModalCrearHistoria = () => {
         setEditingStoryId(null);
         setNewStoryTitle('');
+        setNewStoryStatement(''); // 🚨 LIMPIAR TEXTO
         setNewStoryEpicId(null);
         setNewStoryPoints('');
         setNewStoryUser(null); 
@@ -251,6 +279,7 @@ export default function Backlog() {
     const abrirModalEditarHistoria = (story) => {
         setEditingStoryId(story.id);
         setNewStoryTitle(story.title);
+        setNewStoryStatement(story.statement || ''); // 🚨 CARGAR TEXTO
         setNewStoryEpicId(story.epicId);
         setNewStoryPoints(story.points);
         setNewStoryUser(story.assigneeId || null); 
@@ -261,7 +290,10 @@ export default function Backlog() {
 
     const eliminarHistoria = async (storyId) => {
         try {
-            await fetch(`${API_BASE}/user-stories/${storyId}`, { method: 'DELETE' });
+            await fetch(`${API_BASE}/user-stories/${storyId}`, { 
+                method: 'DELETE',
+                headers: getAuthHeaders() 
+            });
             fetchAllData();
         } catch (error) {
             console.error("Error eliminando historia", error);
@@ -272,7 +304,10 @@ export default function Backlog() {
         if (!sprintToComplete) return;
 
         try {
-            const res = await fetch(`${API_BASE}/sprints/${sprintToComplete}/complete`, { method: 'POST' });
+            const res = await fetch(`${API_BASE}/sprints/${sprintToComplete}/complete`, { 
+                method: 'POST',
+                headers: getAuthHeaders() 
+            });
             if (res.ok) {
                 fetchAllData(); 
             }
@@ -286,7 +321,10 @@ export default function Backlog() {
 
     const eliminarSprint = async (sprintId) => {
         try {
-            const res = await fetch(`${API_BASE}/sprints/${sprintId}`, { method: 'DELETE' });
+            const res = await fetch(`${API_BASE}/sprints/${sprintId}`, { 
+                method: 'DELETE',
+                headers: getAuthHeaders() 
+            });
             if (res.ok || res.status === 204 || res.status === 404) {
                 fetchAllData(); 
             }
@@ -347,8 +385,10 @@ export default function Backlog() {
         try {
             const updatedSprintId = targetZone === 'sprint' ? targetSprintId : null;
             
+            // 🚨 AÑADIDO: Preservar el statement al mover con Drag&Drop
             const putPayload = {
                 title: movedStory.title,
+                statement: movedStory.statement || '', 
                 epicId: movedStory.epicId, 
                 sprintId: updatedSprintId,
                 points: movedStory.points || 0,
@@ -359,7 +399,7 @@ export default function Backlog() {
 
             await fetch(`${API_BASE}/user-stories/${storyId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify(putPayload)
             });
         } catch (error) {
@@ -421,6 +461,8 @@ export default function Backlog() {
             onDragStart={(e) => handleDragStart(e, story.id, zone)}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDropOnCard(e, zone, index, sprintId)}
+            onClick={() => abrirModalEditarHistoria(story)} // 🚨 CLIC EN LA TARJETA ABRE EL DETALLE
+            style={{ cursor: 'pointer' }}
         >
             <div className="story-main">
                 <span className="story-id">{story.id.substring(0,8)}</span>
@@ -435,8 +477,15 @@ export default function Backlog() {
                     <Avatar icon="pi pi-user" shape="circle" className="user-avatar empty-avatar" />
                 }
                 <div className="story-actions">
-                    <Button icon="pi pi-pencil" className="p-button-rounded p-button-secondary p-button-sm action-btn" onClick={() => abrirModalEditarHistoria(story)} />
-                    <Button icon="pi pi-trash" className="p-button-rounded p-button-danger p-button-sm action-btn" onClick={() => eliminarHistoria(story.id)} />
+                    {/* Botón de eliminar, con stopPropagation para que no abra el modal al borrar */}
+                    <Button 
+                        icon="pi pi-trash" 
+                        className="p-button-rounded p-button-danger p-button-sm action-btn" 
+                        onClick={(e) => {
+                            e.stopPropagation(); 
+                            eliminarHistoria(story.id);
+                        }} 
+                    />
                 </div>
             </div>
         </div>
@@ -593,8 +642,22 @@ export default function Backlog() {
                 <div className="modal-form">
                     <div className="field">
                         <label>Título de la Historia</label>
-                        <InputText value={newStoryTitle} onChange={(e) => setNewStoryTitle(e.target.value)} placeholder="Ej: Como usuario quiero..." className="w-full" />
+                        <InputText value={newStoryTitle} onChange={(e) => setNewStoryTitle(e.target.value)} placeholder="Ej: Pantalla de Login" className="w-full" />
                     </div>
+                    
+                    {/* 🚨 NUEVO: CAJA DE TEXTO GRANDE PARA LA DESCRIPCIÓN */}
+                    <div className="field">
+                        <label>Descripción (Historia de Usuario)</label>
+                        <InputTextarea 
+                            value={newStoryStatement} 
+                            onChange={(e) => setNewStoryStatement(e.target.value)} 
+                            rows={4} 
+                            placeholder="Ej: Como usuario, quiero iniciar sesión con mi correo para acceder a mi cuenta." 
+                            className="w-full" 
+                            style={{ resize: 'none' }}
+                        />
+                    </div>
+
                     <div className="field">
                         <label>Épica a la que pertenece</label>
                         <Dropdown value={newStoryEpicId} options={epics} onChange={(e) => setNewStoryEpicId(e.value)} placeholder={epics.length === 0 ? "Crea una épica primero" : "Selecciona una Épica"} className="w-full" disabled={epics.length === 0} />

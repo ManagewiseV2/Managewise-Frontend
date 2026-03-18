@@ -7,7 +7,7 @@ import { Dialog } from 'primereact/dialog';
 import { useNavigate } from 'react-router-dom';
 import './Home.css';
 
-const API_BASE = 'http://localhost:8090/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export default function Home() {
     const navigate = useNavigate();
@@ -26,7 +26,7 @@ export default function Home() {
     const [isAiModalOpen, setAiModalOpen] = useState(false);
 
     // ==========================================
-    // 1. CARGAR DATOS REALES (Filtrados por Proyecto)
+    // 1. CARGAR DATOS REALES (Filtrados por Proyecto y Seguros)
     // ==========================================
     useEffect(() => {
         if (!currentProjectId) {
@@ -35,12 +35,26 @@ export default function Home() {
         }
 
         const fetchInitialData = async () => {
+            // 🚨 SACAMOS EL TOKEN
+            const token = localStorage.getItem('jwt_token');
+            if (!token) {
+                navigate('/login');
+                return;
+            }
+
+            // 🚨 PREPARAMOS LAS CABECERAS CON EL PASE VIP
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+
             try {
                 // 🚨 TRUCO NINJA: Pedimos la lista general de proyectos para esquivar el error 405 de Java
+                // Y ahora todas llevan las cabeceras de seguridad
                 const [sprintsRes, storiesRes, projectsRes] = await Promise.all([
-                    fetch(`${API_BASE}/sprints`),
-                    fetch(`${API_BASE}/user-stories`),
-                    fetch(`${API_BASE}/projects`) // 👈 Quitamos el /${currentProjectId}
+                    fetch(`${API_BASE}/sprints`, { headers }),
+                    fetch(`${API_BASE}/user-stories`, { headers }),
+                    fetch(`${API_BASE}/projects`, { headers }) // 👈 Quitamos el /${currentProjectId}
                 ]);
 
                 // 🚨 Buscamos nuestro proyecto en la lista
@@ -50,6 +64,10 @@ export default function Home() {
                     if (miProyecto) {
                         setProjectName(miProyecto.name);
                     }
+                } else if (projectsRes.status === 401 || projectsRes.status === 403) {
+                    localStorage.clear();
+                    navigate('/login');
+                    return;
                 }
 
                 if (sprintsRes.ok && storiesRes.ok) {
@@ -80,14 +98,24 @@ export default function Home() {
     }, [currentProjectId, navigate]);
 
     // ==========================================
-    // 2. ACTUALIZAR HISTORIAS CUANDO CAMBIAS DE SPRINT
+    // 2. ACTUALIZAR HISTORIAS CUANDO CAMBIAS DE SPRINT (Seguro)
     // ==========================================
     useEffect(() => {
         if (!activeSprintId) return;
 
         const updateSprintStories = async () => {
+            // 🚨 SACAMOS EL TOKEN PARA ESTA PETICIÓN TAMBIÉN
+            const token = localStorage.getItem('jwt_token');
+            if (!token) return;
+
             try {
-                const response = await fetch(`${API_BASE}/user-stories`);
+                const response = await fetch(`${API_BASE}/user-stories`, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
                 if (response.ok) {
                     const allStories = await response.json();
                     const historiasDelSprint = allStories.filter(story => story.sprintId === activeSprintId);
@@ -200,7 +228,7 @@ export default function Home() {
                     <div className="nav-item" onClick={() => navigate('/members')}><i className="pi pi-users"></i> TEAM</div>
                     <div className="nav-item" onClick={() => navigate('/meeting')}><i className="pi pi-video"></i> MEETINGS</div>
                     
-                    <div className="nav-item" onClick={() => setAiModalOpen(true)}>
+                    <div className="nav-item" onClick={() => navigate('/activity')}>
                         <i className="pi pi-history"></i> ACTIVITY FEED <span className="pro-text">PRO</span>
                     </div>
                     <div className="nav-item" onClick={() => setAiModalOpen(true)}>

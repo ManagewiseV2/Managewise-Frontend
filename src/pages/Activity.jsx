@@ -9,8 +9,7 @@ import { Tag } from 'primereact/tag';
 import { Card } from 'primereact/card';
 import './Activity.css';
 
-const API_BASE = 'http://localhost:8090/api/v1';
-
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 export default function Activity() {
     const navigate = useNavigate();
     
@@ -57,27 +56,46 @@ export default function Activity() {
         }
     };
 
+    // ==========================================
+    // 1. CARGA SEGURA DE ACTIVIDADES
+    // ==========================================
     const fetchActivities = async () => {
         if (!currentProjectId) {
             navigate('/projects');
             return;
         }
 
+        // 🚨 SACAMOS EL TOKEN
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+
         setIsLoading(true);
         try {
-            const res = await fetch(`${API_BASE}/activities/project/${currentProjectId}`);
+            // 🚨 AÑADIMOS EL TOKEN A LAS CABECERAS
+            const res = await fetch(`${API_BASE}/activities/project/${currentProjectId}`, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
             if (res.ok) {
-                const data = await res.json();
+                // 🚨 OBTENEMOS EL TEXTO PRIMERO PARA EVITAR ERRORES SI LA RESPUESTA ESTÁ VACÍA
+                const text = await res.text();
+                const data = text ? JSON.parse(text) : [];
                 
-                const formattedActivities = data.map(item => {
+                // Asegurarnos de que data sea un array
+                const activitiesArray = Array.isArray(data) ? data : [];
+
+                const formattedActivities = activitiesArray.map(item => {
                     const { date, time } = formatDateTime(item.createdAt);
-                    
-                    // 🚨 CORRECCIÓN: Leemos actionType en lugar de type
                     const styles = getTypeStyles(item.actionType);
                     
                     return {
                         id: item.id,
-                        // 🚨 CORRECCIÓN: Traducimos las variables de Java a React
                         user: item.authorName || 'Sistema', 
                         type: item.actionType || 'info',
                         action: item.content || 'realizó una actualización',
@@ -90,6 +108,12 @@ export default function Activity() {
                 });
 
                 setActivities(formattedActivities.reverse());
+            } else if (res.status === 401 || res.status === 403) {
+                // Si el token ya no sirve, lo expulsamos
+                localStorage.clear();
+                navigate('/login');
+            } else {
+                console.error("Error del servidor al cargar actividades:", res.status);
             }
         } catch (error) {
             console.error("Error al cargar el log de actividades:", error);
