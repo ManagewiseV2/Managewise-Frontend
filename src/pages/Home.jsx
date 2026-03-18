@@ -11,26 +11,26 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export default function Home() {
     const navigate = useNavigate();
-    
-    // 🚀 MAGIA: Sacamos el ID del proyecto actual de la memoria
     const currentProjectId = localStorage.getItem('current_project_id');
 
     const [projectName, setProjectName] = useState('Cargando Proyecto...');
     const [availableSprints, setAvailableSprints] = useState([]);
     const [activeSprintId, setActiveSprintId] = useState(null); 
-    const [sprintStories, setSprintStories] = useState([]); // Las historias reales del sprint
-    const [loading, setLoading] = useState(true);
+    const [sprintStories, setSprintStories] = useState([]); 
     
+    // 🚨 NUEVO ESTADO: Guardamos los miembros para traducir IDs a Nombres
+    const [teamMembers, setTeamMembers] = useState([]); 
+    
+    const [loading, setLoading] = useState(true);
     const [isAiModalOpen, setAiModalOpen] = useState(false);
 
-    // 🚨 MANEJADOR DE CLICS PRO (Bloquea navegación y abre popup)
     const handleProClick = (e) => {
         if (e) e.preventDefault();
         setAiModalOpen(true);
     };
 
     // ==========================================
-    // 1. CARGAR DATOS REALES (Filtrados por Proyecto y Seguros)
+    // CARGAR DATOS
     // ==========================================
     useEffect(() => {
         if (!currentProjectId) {
@@ -39,54 +39,50 @@ export default function Home() {
         }
 
         const fetchInitialData = async () => {
-            // 🚨 SACAMOS EL TOKEN
             const token = localStorage.getItem('jwt_token');
             if (!token) {
                 navigate('/login');
                 return;
             }
 
-            // 🚨 PREPARAMOS LAS CABECERAS CON EL PASE VIP
             const headers = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             };
 
             try {
-                const [sprintsRes, storiesRes, projectsRes] = await Promise.all([
+                // 🚨 AÑADIMOS LA PETICIÓN DE MIEMBROS AQUÍ
+                const [sprintsRes, storiesRes, projectsRes, membersRes] = await Promise.all([
                     fetch(`${API_BASE}/sprints`, { headers }),
                     fetch(`${API_BASE}/user-stories`, { headers }),
-                    fetch(`${API_BASE}/projects`, { headers }) 
+                    fetch(`${API_BASE}/projects`, { headers }),
+                    fetch(`${API_BASE}/team-members/project/${currentProjectId}`, { headers }) 
                 ]);
 
-                // 🚨 Buscamos nuestro proyecto en la lista
                 if (projectsRes.ok) {
                     const allProjects = await projectsRes.json();
                     const miProyecto = allProjects.find(p => p.id === currentProjectId);
-                    if (miProyecto) {
-                        setProjectName(miProyecto.name);
-                    }
+                    if (miProyecto) setProjectName(miProyecto.name);
                 } else if (projectsRes.status === 401 || projectsRes.status === 403) {
-                    localStorage.clear();
-                    navigate('/login');
-                    return;
+                    localStorage.clear(); navigate('/login'); return;
+                }
+
+                // 🚨 GUARDAMOS LOS MIEMBROS
+                if (membersRes.ok) {
+                    setTeamMembers(await membersRes.json());
                 }
 
                 if (sprintsRes.ok && storiesRes.ok) {
                     const allSprints = await sprintsRes.json();
                     const allStories = await storiesRes.json();
 
-                    // FILTRAMOS SOLO LOS SPRINTS DE ESTE PROYECTO
                     const misSprints = allSprints.filter(s => s.projectId === currentProjectId);
                     setAvailableSprints(misSprints);
 
                     if (misSprints.length > 0) {
                         const primerSprintId = misSprints[0].id;
                         setActiveSprintId(primerSprintId);
-                        
-                        // Guardamos las historias del primer sprint
-                        const historiasDelSprint = allStories.filter(story => story.sprintId === primerSprintId);
-                        setSprintStories(historiasDelSprint);
+                        setSprintStories(allStories.filter(story => story.sprintId === primerSprintId));
                     }
                 }
             } catch (error) {
@@ -99,9 +95,6 @@ export default function Home() {
         fetchInitialData();
     }, [currentProjectId, navigate]);
 
-    // ==========================================
-    // 2. ACTUALIZAR HISTORIAS CUANDO CAMBIAS DE SPRINT (Seguro)
-    // ==========================================
     useEffect(() => {
         if (!activeSprintId) return;
 
@@ -111,40 +104,46 @@ export default function Home() {
 
             try {
                 const response = await fetch(`${API_BASE}/user-stories`, {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    }
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
                 });
                 
                 if (response.ok) {
                     const allStories = await response.json();
-                    const historiasDelSprint = allStories.filter(story => story.sprintId === activeSprintId);
-                    setSprintStories(historiasDelSprint);
+                    setSprintStories(allStories.filter(story => story.sprintId === activeSprintId));
                 }
-            } catch (error) {
-                console.error("Error actualizando historias del sprint:", error);
-            }
+            } catch (error) { console.error("Error actualizando historias:", error); }
         };
 
         updateSprintStories();
     }, [activeSprintId]);
 
     // ==========================================
-    // 3. MATEMÁTICA REAL PARA LOS GRÁFICOS
+    // MATEMÁTICA Y GRÁFICOS
     // ==========================================
-    
     const totalPoints = sprintStories.reduce((sum, s) => sum + (s.points || 0), 0);
     const completedPoints = sprintStories.filter(s => s.status === 'DONE').reduce((sum, s) => sum + (s.points || 0), 0);
     const displayProgress = totalPoints > 0 ? Math.round((completedPoints / totalPoints) * 100) : 0;
 
+    // 🚨 TRADUCCIÓN DE ID A NOMBRE PARA EL GRÁFICO
     const teamEffortLabels = [];
     const teamEffortPoints = [];
     
-    const assignees = [...new Set(sprintStories.map(s => s.assigneeId || 'Sin asignar'))];
-    assignees.forEach(assignee => {
-        teamEffortLabels.push(assignee);
-        const puntosDelDev = sprintStories.filter(s => (s.assigneeId || 'Sin asignar') === assignee).reduce((sum, s) => sum + (s.points || 0), 0);
+    const uniqueAssignees = [...new Set(sprintStories.map(s => s.assigneeId || null))];
+    
+    uniqueAssignees.forEach(assigneeId => {
+        // Buscamos el nombre del miembro. Si no hay ID, es "Sin asignar"
+        let labelName = 'Sin asignar';
+        if (assigneeId) {
+            const member = teamMembers.find(m => String(m.id) === String(assigneeId));
+            labelName = member ? member.fullName : 'Usuario Desconocido';
+        }
+        
+        teamEffortLabels.push(labelName);
+        
+        const puntosDelDev = sprintStories
+            .filter(s => (s.assigneeId || null) === assigneeId)
+            .reduce((sum, s) => sum + (s.points || 0), 0);
+            
         teamEffortPoints.push(puntosDelDev);
     });
 
@@ -204,14 +203,6 @@ export default function Home() {
         ]
     };
 
-    const burndownOptions = {
-        maintainAspectRatio: false,
-        plugins: { legend: { labels: { font: { size: 14, weight: 'bold' } } } },
-        scales: {
-            y: { beginAtZero: true }
-        }
-    };
-
     const activeSprintName = availableSprints.find(s => s.id === activeSprintId)?.name || '';
 
     return (
@@ -224,7 +215,6 @@ export default function Home() {
                     <div className="nav-item" onClick={() => navigate('/members')}><i className="pi pi-users"></i> TEAM</div>
                     <div className="nav-item" onClick={() => navigate('/meeting')}><i className="pi pi-video"></i> MEETINGS</div>
                     
-                    {/* BLOQUEO DE RUTAS PRO EN SIDEBAR */}
                     <div className="nav-item" onClick={handleProClick}>
                         <i className="pi pi-history"></i> ACTIVITY FEED <span className="pro-text">PRO</span>
                     </div>
@@ -254,7 +244,6 @@ export default function Home() {
                         <div className="export-actions">
                             <span className="export-label">Exportar Reportes:</span>
                             <div className="export-buttons-group">
-                                {/* BLOQUEO EN BOTONES DE EXPORTACIÓN */}
                                 <Button icon="pi pi-file-pdf" className="p-button-danger action-btn-sm" onClick={handleProClick} />
                                 <Button icon="pi pi-file-excel" className="p-button-outlined p-button-success action-btn-sm" onClick={handleProClick} />
                                 <Button icon="pi pi-chart-bar" className="p-button-outlined p-button-help action-btn-sm" onClick={handleProClick} />
@@ -313,10 +302,7 @@ export default function Home() {
                                         >
                                             <div className="sprint-main-info">
                                                 <span className="sprint-number">{sprint.name}</span>
-                                                <Tag 
-                                                    value={sprint.status || 'PLANNING'} 
-                                                    severity={sprint.status === 'ACTIVE' ? 'success' : 'secondary'} 
-                                                />
+                                                <Tag value={sprint.status || 'PLANNING'} severity={sprint.status === 'ACTIVE' ? 'success' : 'secondary'} />
                                             </div>
                                             <i className="pi pi-chevron-right"></i>
                                         </div>
@@ -327,7 +313,7 @@ export default function Home() {
                             <div className="graphics-section">
                                 <Card className="grid-full main-card-chart" title={`BURNDOWN SIMULADO: ${activeSprintName.toUpperCase()}`}>
                                     <div className="chart-container">
-                                        <Chart type="line" data={burndownData} options={burndownOptions} style={{ height: '450px', width: '100%' }} />
+                                        <Chart type="line" data={burndownData} options={{ maintainAspectRatio: false }} style={{ height: '450px', width: '100%' }} />
                                     </div>
                                 </Card>
 
@@ -335,6 +321,8 @@ export default function Home() {
                                     <Card className="grid-half" title="Distribución de Estados">
                                         <Chart type="pie" data={distributionData} style={{ height: '280px', width: '100%' }} />
                                     </Card>
+                                    
+                                    {/* 🚨 AQUÍ EL GRÁFICO YA MOSTRARÁ LOS NOMBRES REALES */}
                                     <Card className="grid-half" title="Esfuerzo del Equipo (Pts Asignados)">
                                         <Chart type="bar" data={teamEffortData} options={{ scales: { y: { beginAtZero: true } } }} style={{ height: '280px', width: '100%' }} />
                                     </Card>
@@ -362,7 +350,6 @@ export default function Home() {
                 </div>
             </main>
 
-            {/* MODAL PLANES UNIFICADO Y ÚNICO */}
             <Dialog 
                 visible={isAiModalOpen} 
                 style={{ width: '90vw', maxWidth: '800px' }} 
@@ -375,50 +362,43 @@ export default function Home() {
                     <div className="popup-close-btn" onClick={() => setAiModalOpen(false)}>
                         <i className="pi pi-times"></i>
                     </div>
-                    
                     <div className="upgrade-header">
                         <h1>Actualiza tu Plan</h1>
                         <p>ManageWise AI y las exportaciones avanzadas requieren una suscripción activa.</p>
                     </div>
-
                     <div className="pricing-grid">
                         <div className="pricing-card">
                             <div className="pricing-header">
                                 <h3>Light</h3>
                                 <p>Get the basics</p>
-                                <div className="price">
-                                    <span className="currency">$</span><span className="amount">0</span><span className="period">/mo</span>
-                                </div>
+                                <div className="price"><span className="currency">$</span><span className="amount">0</span><span className="period">/mo</span></div>
                             </div>
                             <div className="pricing-features">
                                 <ul>
                                     <li><i className="pi pi-check"></i> Hasta 2 Proyectos</li>
                                     <li><i className="pi pi-check"></i> 5 Colaboradores</li>
-                                    <li className="disabled"><i className="pi pi-times"></i> Exportación de Reportes</li>
-                                    <li className="disabled"><i className="pi pi-times"></i> Asistente ManageWise AI</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> Exportación</li>
+                                    <li className="disabled"><i className="pi pi-times"></i> AI Assistant</li>
                                 </ul>
                             </div>
                             <Button label="Tu Plan Actual" className="p-button-outlined p-button-secondary w-full" disabled />
                         </div>
-
                         <div className="pricing-card popular">
                             <div className="recommended-badge">RECOMENDADO</div>
                             <div className="pricing-header">
                                 <h3>Pro Business</h3>
                                 <p>Grow your brand</p>
-                                <div className="price">
-                                    <span className="currency">$</span><span className="amount">29</span><span className="period">/mo</span>
-                                </div>
+                                <div className="price"><span className="currency">$</span><span className="amount">29</span><span className="period">/mo</span></div>
                             </div>
                             <div className="pricing-features">
                                 <ul>
                                     <li><i className="pi pi-check"></i> Proyectos Ilimitados</li>
                                     <li><i className="pi pi-check"></i> Ilimitados Colaboradores</li>
-                                    <li><i className="pi pi-check"></i> Reportes PDF y Excel y Power Bi</li>
+                                    <li><i className="pi pi-check"></i> Exportación PDF/Excel</li>
                                     <li><i className="pi pi-check"></i> <strong>ManageWise AI</strong></li>
                                 </ul>
                             </div>
-                            <Button label="Actualizar a Pro" className="p-button-orange w-full" onClick={() => alert('Redirigiendo a pasarela de pago...')} />
+                            <Button label="Actualizar a Pro" className="p-button-orange w-full" onClick={() => alert('Redirigiendo a pasarela...')} />
                         </div>
                     </div>
                 </div>
