@@ -97,50 +97,59 @@ export default function Projects() {
     // 2. CREAR PROYECTO REAL
     // ==========================================
     const handleCreateProject = async () => {
-        const token = localStorage.getItem('jwt_token');
-        if (!token) {
-            alert("Tu sesión ha finalizado. Por favor, inicia sesión de nuevo.");
-            navigate('/login');
-            return;
-        }
+        const token = localStorage.getItem('jwt_token');
+        if (!token) {
+            alert("Tu sesión ha finalizado. Por favor, inicia sesión de nuevo.");
+            navigate('/login');
+            return;
+        }
 
-        if (projects.length >= PROJECT_LIMIT) {
-            setNewProjectModalOpen(false);
-            setAiModalOpen(true); 
-            return;
-        }
-        
-        if (!newProjectName.trim()) {
-            alert("El nombre del proyecto es obligatorio");
-            return;
-        }
+        if (projects.length >= PROJECT_LIMIT) {
+            setNewProjectModalOpen(false);
+            setAiModalOpen(true); 
+            return;
+        }
+        
+        if (!newProjectName.trim()) {
+            alert("El nombre del proyecto es obligatorio");
+            return;
+        }
 
-        const payload = {
-            name: newProjectName.trim(),
-            description: newProjectDesc.trim() || 'Sin descripción',
-            ownerId: currentUsername, 
-            role: "Product Owner" 
-        };
+        const payload = {
+            name: newProjectName.trim(),
+            description: newProjectDesc.trim() || 'Sin descripción',
+            ownerId: currentUsername, 
+            role: "Product Owner" 
+        };
 
-        try {
-            const res = await fetch(`${API_BASE}/projects`, {
-                method: 'POST',
-                headers: getAuthHeaders(),
-                body: JSON.stringify(payload)
-            });
+        try {
+            const res = await fetch(`${API_BASE}/projects`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify(payload)
+            });
 
-            if (res.ok) {
-                fetchProjects(); // Recargamos la lista
-                setNewProjectName('');
-                setNewProjectDesc('');
-                setNewProjectModalOpen(false);
-            } else {
-                console.error("Error del servidor al crear.");
-            }
-        } catch (error) {
-            console.error("Error de conexión al crear el proyecto", error);
-        }
-    };
+            if (res.ok) {
+                fetchProjects(); // Recargamos la lista
+                setNewProjectName('');
+                setNewProjectDesc('');
+                setNewProjectModalOpen(false);
+
+                // 🚨 MAGIA DE n8n AQUÍ 🚨
+                // Le avisamos a n8n que mande el correo en segundo plano
+                fetch("http://localhost:5678/webhook-test/5173cd70-d3a7-421a-8792-d19b5faf892b", {
+                    method: "POST"
+                })
+                .then(() => console.log("¡n8n avisado con éxito! Correo en camino."))
+                .catch(error => console.error("Error llamando a n8n:", error));
+
+            } else {
+                console.error("Error del servidor al crear.");
+            }
+        } catch (error) {
+            console.error("Error de conexión al crear el proyecto", error);
+        }
+    };
 
     // ==========================================
     // 3. ENTRAR AL PROYECTO (LA LLAVE DEL SISTEMA)
