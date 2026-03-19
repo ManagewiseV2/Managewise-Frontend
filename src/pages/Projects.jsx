@@ -138,10 +138,11 @@ export default function Projects() {
                 // 🚨 MAGIA DE n8n AQUÍ 🚨
                 // Le avisamos a n8n que mande el correo en segundo plano
                 fetch("https://bfvrx-2800-200-e300-17b-c503-89a7-f005-cb1f.a.free.pinggy.link/webhook-test/5173cd70-d3a7-421a-8792-d19b5faf892b", {
-                    method: "POST"
-                })
-                .then(() => console.log("¡n8n avisado con éxito! Correo en camino."))
-                .catch(error => console.error("Error llamando a n8n:", error));
+    method: "POST",
+    mode: "no-cors" // <--- ESTO APAGA EL CORS DEL NAVEGADOR
+})
+.then(() => console.log("¡n8n avisado con éxito! (CORS ignorado)"))
+.catch(error => console.error("Error llamando a n8n:", error));
 
             } else {
                 console.error("Error del servidor al crear.");
